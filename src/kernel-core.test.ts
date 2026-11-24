@@ -73,3 +73,14 @@ near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y:
   const yz = box('YZ'); near(yz.bb[0][1], 0, 1e-6, 'YZ: y min 0'); near(yz.bb[1][1], 10, 1e-6, 'YZ: y max 10 (sketch x)'); near(yz.bb[1][2], 20, 1e-6, 'YZ: z max 20 (sketch y)'); near(yz.bb[0][0], 0, 1e-6, 'YZ: x min 0'); near(yz.bb[1][0], 5, 1e-6, 'YZ: x max 5 (normal is +X)'); near(yz.v, 1000, 1e-6, 'YZ volume 1000');
   // a feature on another plane joins an XY plate: plate 40x30x10 plus an XZ block 10x20x5 at y -5..0 that touches the plate's y=0 face
   near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [rect(0, 0, 10, 20)], depth: 5, plane: 'XZ', op: 'join' }])), 12000 + 1000 - 10 * 10 * 5 * 0 - 0, 0.01, 'XZ join onto the XY plate (overlap: z 0..10 at y -5..0 is outside the plate, so no overlap)'); }
+
+// Sketch axis orientation on a 10 x 20 rectangle extruded 5 (hand bounding boxes). r = quarter turns about the normal, f = flip normal.
+{ const bb = (plane: any, orient: any) => { const b = buildBodies(R, [{ kind: 'extrude', sketch: [rect(0, 0, 10, 20)], depth: 5, plane, orient }])[0]; return { bb: (b as any).boundingBox.bounds as number[][], v: R.measureVolume(b) }; };
+  const chk = (n: string, got: number[][], want: number[][]) => { for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) near(got[i][j], want[i][j], 1e-6, `${n} [${i}][${j}]`); };
+  chk('XY r=1', bb('XY', { r: 1 }).bb, [[-20, 0, 0], [0, 10, 5]]);
+  chk('XY r=2', bb('XY', { r: 2 }).bb, [[-10, -20, 0], [0, 0, 5]]);
+  chk('XY r=3', bb('XY', { r: 3 }).bb, [[0, -10, 0], [20, 0, 5]]);
+  chk('XY f', bb('XY', { f: true }).bb, [[0, -20, -5], [10, 0, 0]]);
+  chk('XZ r=1', bb('XZ', { r: 1 }).bb, [[-20, -5, 0], [0, 0, 10]]);
+  chk('YZ r=1', bb('YZ', { r: 1 }).bb, [[0, -20, 0], [5, 0, 10]]);
+  near(bb('XY', { r: 1, f: true }).v, 1000, 1e-6, 'orientation keeps the volume'); }
