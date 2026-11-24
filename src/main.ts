@@ -173,7 +173,9 @@ function props() {
 
 // ---------- actions ----------
 function startSketch(from?: Entity[]) { sketch = from ? clone(from) : pending ? clone(pending) : []; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
-$('startsk').onclick = () => { editing = null; startSketch(); };
+$('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
+$('ppxy').onclick = () => { $('pp').classList.remove('show'); startSketch(); };
+$('ppx').onclick = () => $('pp').classList.remove('show');
 function editFeature(i: number) { editing = i; sel = i; startSketch(features[i].sketch); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) pending = null; editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
