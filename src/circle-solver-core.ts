@@ -29,6 +29,16 @@ export function solveCircles(w: W, lines: L[], circles: C[], cons: CCon[]): void
   const pt = (id: string) => out.find((p: any) => p.id === id), ci = (id: string) => out.find((p: any) => p.id === id);
   const ok = !(status !== 0 || bad) && circles.every((_, i) => { const p = pt(`cc${i}`), c = ci(`c${i}`); return p && c && isFinite(p.x) && isFinite(p.y) && isFinite(c.radius) && c.radius > 1e-6; }) && lines.every((_, i) => { const a = pt(`la${i}`), b = pt(`lb${i}`); return a && b && isFinite(a.x) && isFinite(b.x) && Math.hypot(b.x - a.x, b.y - a.y) > 1e-6; });
   if (!ok) throw new Error('These constraints conflict or cannot all be satisfied together.');
+  // Do not trust the solver's success flag alone: check each constraint on the result.
+  const cur = (c: C) => { const i = circles.indexOf(c); const p = pt(`cc${i}`), q = ci(`c${i}`); return { x: p.x, y: p.y, r: q.radius }; };
+  const unmet = cons.some((k) => { if (!circles.includes(k.c)) return false; const a = cur(k.c);
+    if (k.k === 'rad') return Math.abs(a.r - (k.v as number)) > 1e-5 * Math.max(1, a.r);
+    if (k.k === 'tanlc' && k.l) { const l = k.l, ll = Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y); const d = Math.abs((l.b.x - l.a.x) * (l.a.y - a.y) - (l.a.x - a.x) * (l.b.y - l.a.y)) / ll; return Math.abs(d - a.r) > 1e-5 * Math.max(1, a.r); }
+    if (k.d && circles.includes(k.d)) { const b = cur(k.d); const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (k.k === 'conc') return d > 1e-5; if (k.k === 'eqr') return Math.abs(a.r - b.r) > 1e-5 * Math.max(1, a.r);
+      if (k.k === 'tancc') return Math.abs(d - (a.r + b.r)) > 1e-5 * Math.max(1, d) && Math.abs(d - Math.abs(a.r - b.r)) > 1e-5 * Math.max(1, d); }
+    return false; });
+  if (unmet) throw new Error('The solver could not satisfy these constraints together. Nothing changed.');
   lines.forEach((l, i) => { const a = pt(`la${i}`), b = pt(`lb${i}`); l.a = { x: a.x, y: a.y }; l.b = { x: b.x, y: b.y }; });
   circles.forEach((c, i) => { const p = pt(`cc${i}`); c.c = { x: p.x, y: p.y }; c.r = ci(`c${i}`).radius; });
 }
