@@ -269,3 +269,24 @@ $('dxf').onclick = exportDxf; $('dxf2').onclick = exportDxf;
 
 setMode('model'); resize(); setView('home');
 try { const t = localStorage.getItem('cadlite'); if (t) load(t); } catch { /* ignore */ }
+
+// ---------- ribbon tooltips (replace native title with a styled box) ----------
+(() => {
+  const tip = $('tip'); let timer: number | undefined;
+  const hide = () => { clearTimeout(timer); tip.style.display = 'none'; };
+  document.addEventListener('mouseover', (e) => {
+    const t = (e.target as HTMLElement).closest('#ribbon button, #title button, #tabs button, #nav button, #vc button') as HTMLElement | null;
+    if (!t) return hide();
+    if (t.title) { t.dataset.tt = t.title; t.removeAttribute('title'); }
+    let raw = t.dataset.tt || ''; if (/in development/i.test(raw)) raw = ''; const pend = t.classList.contains('pend') || t.classList.contains('pendtab');
+    const name = (t.textContent || '').trim() || raw.split(/ \(| –|:/)[0] || 'Command';
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      const r = t.getBoundingClientRect();
+      tip.innerHTML = '<b></b><span></span>' + (pend ? '<div class="st">In development / قيد التطوير</div>' : '');
+      (tip.children[0] as HTMLElement).textContent = name; (tip.children[1] as HTMLElement).textContent = raw && raw !== name ? raw.replace(/\s*\(in development[^)]*\)/i, '') : '';
+      tip.style.display = 'block'; tip.style.left = Math.min(r.left, innerWidth - 250) + 'px'; tip.style.top = r.bottom + 6 + 'px';
+    }, 350);
+  });
+  document.addEventListener('mouseout', hide); document.addEventListener('click', hide);
+})();
