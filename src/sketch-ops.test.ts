@@ -1,4 +1,4 @@
-import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity } from './sketch-ops';
+import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity, stretchEntity } from './sketch-ops';
 import { circle3, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (!(Math.abs(a - b) <= tol)) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(4)); };
 const line: Entity = { t: 'line', a: { x: 1, y: 2 }, b: { x: 4, y: 6 } };
@@ -30,3 +30,6 @@ if (offsetEntity(rect, -1.5) !== null) { console.error('FAIL rect collapse'); pr
   s = scaleEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 3, y: 4 } }, c, 0.5) as any; near(Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y), 2.5, 1e-9, 'scale line 5 to 2.5'); near(s.a.x, 5, 1e-9, 'scale line start (10+(0-10)*0.5)');
   s = scaleEntity({ t: 'arc', a: { x: 10, y: 0 }, b: { x: -10, y: 0 }, m: { x: 0, y: 10 } }, { x: 0, y: 0 }, 3) as any; const cc = circle3(s.a, s.b, s.m)!; near(cc.r, 30, 1e-9, 'scale arc radius 10 to 30'); near(cc.c.x, 0, 1e-9, 'scale arc keeps centre');
   if (scaleEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 1, y: 1 } }, c, 0) !== null || scaleEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 1, y: 1 } }, c, -2) !== null) { console.error('FAIL scale factor 0 or negative must be refused'); process.exit(1); } console.log('ok scale factor 0 or negative is refused'); }
+{ const W = { x0: 8, y0: -1, x1: 12, y1: 1 }; const s = stretchEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, W, 5, 0) as any; near(s.a.x, 0, 1e-9, 'stretch line a stays'); near(s.b.x, 15, 1e-9, 'stretch line b moves'); }
+{ const W = { x0: -5, y0: 5, x1: 25, y1: 15 }; const s = stretchEntity({ t: 'rect', a: { x: 0, y: 0 }, b: { x: 20, y: 10 } }, W, 0, 5) as any; near(s.t === 'rect' ? 1 : 0, 1, 0, 'stretch top side keeps a rect'); near(s.a.y, 0, 1e-9, 'stretch rect bottom stays'); near(s.b.y, 15, 1e-9, 'stretch rect top moves'); near(s.b.x, 20, 1e-9, 'stretch rect x unchanged'); }
+{ const c: Entity = { t: 'circle', c: { x: 50, y: 50 }, r: 3 }; if (stretchEntity(c, { x0: 0, y0: 0, x1: 10, y1: 10 }, 5, 5) !== c) { console.error('FAIL untouched circle'); process.exit(1); } const arc: Entity = { t: 'arc', a: { x: 0, y: 0 }, b: { x: 10, y: 0 }, m: { x: 5, y: 5 } }; if (stretchEntity(arc, { x0: 8, y0: -1, x1: 12, y1: 1 }, 5, 0) !== null) { console.error('FAIL partial arc must be refused'); process.exit(1); } console.log('ok stretch leaves untouched and refuses half an arc'); }
