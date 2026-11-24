@@ -27,6 +27,7 @@ let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
 let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
 let sketch: Entity[] = [];
+let winA: P | null = null, winB: P | null = null, winPx = { x: 0, y: 0 }; // window-select box (world corners, start pixel)
 let selE: Entity[] = []; let hist: string[] = []; let redoS: string[] = []; let restoring = false;
 type PlaneId = 'XY' | 'XZ' | 'YZ';
 let curPlane: PlaneId = 'XY'; // plane of the sketch being drawn, edited or waiting for a feature
@@ -122,6 +123,7 @@ function draw() {
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
   for (const e of all) { ctx.strokeStyle = selE.includes(e) ? '#e8590c' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
+  if (winA && winB) { const a = toScreen(winA), b = toScreen(winB); const cross = winB.x < winA.x; ctx.save(); ctx.setLineDash(cross ? [6 * dpr, 4 * dpr] : []); ctx.strokeStyle = cross ? '#2a8a3a' : '#1f6fd1'; ctx.fillStyle = cross ? 'rgba(42,138,58,0.10)' : 'rgba(31,111,209,0.10)'; ctx.lineWidth = 1.2 * dpr; ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.restore(); }
   if (segPts.length && hover) {
     ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = tool === 'line' ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
     if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
@@ -142,7 +144,7 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e); const pr = ptRaw(e);
-  if (tool === 'select') { pickEnt(pr, e.ctrlKey || e.metaKey); return; }
+  if (tool === 'select') { winA = null; winB = null; const had = pickEnt(pr, e.ctrlKey || e.metaKey); if (!had) { winA = pr; winB = pr; winPx = { x: e.clientX, y: e.clientY }; } return; }
   if (tool === 'crad') {
     const cir = ringHit(pr); if (!cir) { msg("Click a circle's outline to pin its radius."); return; }
     if (cons.some((x) => (x.k as string) === 'rad' && (x.l as unknown) === cir)) { msg('This circle already has a pinned radius.'); return; }
@@ -236,11 +238,12 @@ sk.addEventListener('pointerdown', (e) => {
 });
 sk.addEventListener('pointermove', (e) => {
   if (pan) { cam.x -= ((e.clientX - pan.x) * devicePixelRatio) / cam.s; cam.y += ((e.clientY - pan.y) * devicePixelRatio) / cam.s; pan = { x: e.clientX, y: e.clientY }; draw(); return; }
+  if (winA) { winB = ptRaw(e); draw(); }
   const p = pt(e); hover = p; if (segPts.length) draw(); $('coord').textContent = `X ${p.x}  Y ${p.y}  mm`;
   if (drag) { drag.cur = p; drag.moved = true; draw(); }
 });
 let downAt = { x: 0, y: 0 };
-sk.addEventListener('pointerup', (ev) => { pan = null; if (drag && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 8) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
+sk.addEventListener('pointerup', (ev) => { pan = null; if (winA && winB) { if (Math.hypot(ev.clientX - winPx.x, ev.clientY - winPx.y) > 8) windowSelect(winA, winB, ev.ctrlKey || ev.metaKey); winA = null; winB = null; draw(); } if (drag && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 8) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
 const commitFillet = () => {
   const P0 = filPt!; const r = parseFloat($<HTMLInputElement>('dimin').value);
   try {
@@ -419,11 +422,19 @@ function distTo(e: Entity, p: P): number {
   for (let i = 0; i < pts.length - (closed ? 0 : 1); i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy; const t = L2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2)) : 0; best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))); }
   return best;
 }
-function pickEnt(p: P, add: boolean) {
+/** Window select: left to right takes shapes fully inside the box, right to left (dashed green) takes any shape the box touches. */
+function windowSelect(a: P, b: P, add: boolean) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y); const crossing = b.x < a.x;
+  const inside = (q: P) => q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1;
+  const segHit = (p: P, q: P) => { let t0 = 0, t1 = 1; const dx = q.x - p.x, dy = q.y - p.y; for (const [pp, qq] of [[-dx, p.x - x0], [dx, x1 - p.x], [-dy, p.y - y0], [dy, y1 - p.y]]) { if (pp === 0) { if (qq < 0) return false; } else { const t = qq / pp; if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; } } } return true; };
+  const hit = (e: Entity) => { const pts = outline(e); if (!crossing) return pts.every(inside); const closed = !(e.t === 'line' || e.t === 'arc'); for (let i = 0; i < pts.length - (closed ? 0 : 1); i++) if (segHit(pts[i], pts[(i + 1) % pts.length])) return true; return pts.some(inside); };
+  const got = sketch.filter(hit); selE = add ? [...new Set([...selE, ...got])] : got; props(); msg(`${selE.length} shape(s) selected (${crossing ? 'crossing' : 'window'}).`);
+}
+function pickEnt(p: P, add: boolean): boolean {
   const tol = (10 * devicePixelRatio) / cam.s; let best: Entity | null = null, bd = tol;
   for (const e of sketch) { const d = distTo(e, p); if (d < bd) { bd = d; best = e; } }
   if (!best) { if (!add) selE = []; } else if (add) selE = selE.includes(best) ? selE.filter((x) => x !== best) : [...selE, best]; else selE = [best];
-  msg(selE.length ? `${selE.length} shape(s) selected.` : 'Nothing selected.'); draw();
+  msg(selE.length ? `${selE.length} shape(s) selected.` : 'Nothing selected.'); draw(); return !!best;
 }
 const usedByCon = (e: Entity) => cons.some((c) => c.l === (e as unknown) || c.m === (e as unknown)) || dims.some((d) => d.e === e);
 function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).`); }
