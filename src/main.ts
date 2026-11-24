@@ -10,7 +10,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'none' = 'rect';
 let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
 let sketch: Entity[] = [];
@@ -19,7 +19,7 @@ let features: Feature[] = [];
 let sel: number | null = null; // selected feature
 let editing: number | null = null; // feature whose sketch is being edited
 let dlgKind: 'extrude' | 'revolve' | null = null;
-let drag: { start: P; cur: P } | null = null;
+let drag: { start: P; cur: P; moved: boolean } | null = null;
 let polyPts: P[] = [];
 const cam = { x: 20, y: 15, s: 6 };
 
@@ -55,12 +55,15 @@ function draw() {
     if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
+  if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
   if (c && drag) { ctx.fillStyle = '#123'; ctx.font = `${13 * dpr}px sans-serif`; const s = toScreen(drag.cur); ctx.fillText(c.t === 'rect' ? `${Math.abs(c.b.x - c.a.x)} x ${Math.abs(c.b.y - c.a.y)} mm` : c.t === 'circle' ? `R ${c.r.toFixed(1)} mm` : '', s.x + 12, s.y - 12); }
 }
 function pt(e: PointerEvent): P { const r = sk.getBoundingClientRect(); const w = toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); const g = grid(); return { x: snap(w.x, g), y: snap(w.y, g) }; }
 let pan: { x: number; y: number } | null = null;
 sk.addEventListener('pointerdown', (e) => {
-  if (e.button === 1 || e.button === 2 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
+  if (e.button === 2) return; // right click opens the Inventor-style OK / Cancel menu
+  if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
+  if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e);
   if (tool === 'line') {
     if (!segPts.length) segPts = [p]; else if (Math.hypot(p.x - segPts[0].x, p.y - segPts[0].y) > 1e-9) { sketch.push({ t: 'line', a: segPts[0], b: p }); segPts = [p]; props(); }
@@ -75,20 +78,27 @@ sk.addEventListener('pointerdown', (e) => {
     if (polyPts.length >= 3 && Math.hypot(p.x - polyPts[0].x, p.y - polyPts[0].y) < grid() * 0.5 + 1e-9) { sketch.push({ t: 'poly', pts: polyPts }); polyPts = []; props(); } else polyPts.push(p);
     draw(); return;
   }
-  drag = { start: p, cur: p };
+  downAt = { x: e.clientX, y: e.clientY };
+  if (tool === 'rect' || tool === 'circle') drag = { start: p, cur: p, moved: false };
 });
 sk.addEventListener('pointermove', (e) => {
   if (pan) { cam.x -= ((e.clientX - pan.x) * devicePixelRatio) / cam.s; cam.y += ((e.clientY - pan.y) * devicePixelRatio) / cam.s; pan = { x: e.clientX, y: e.clientY }; draw(); return; }
   const p = pt(e); hover = p; if (segPts.length) draw(); $('coord').textContent = `X ${p.x}  Y ${p.y}  mm`;
-  if (drag) { drag.cur = p; draw(); }
+  if (drag) { drag.cur = p; drag.moved = true; draw(); }
 });
-sk.addEventListener('pointerup', () => { pan = null; if (drag) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
-sk.addEventListener('contextmenu', (e) => e.preventDefault());
+let downAt = { x: 0, y: 0 };
+sk.addEventListener('pointerup', (ev) => { pan = null; if (drag && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 8) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
+const ctxm = $('ctxm');
+const endTool = (exitTool: boolean) => { polyPts = []; segPts = []; drag = null; if (exitTool) { tool = 'none'; refreshButtons(); } ctxm.style.display = 'none'; draw(); };
+sk.addEventListener('contextmenu', (e) => { e.preventDefault(); if (mode !== 'sketch') return; const r = $('gfx').getBoundingClientRect(); ctxm.style.left = e.clientX - r.left + 'px'; ctxm.style.top = e.clientY - r.top + 'px'; ctxm.style.display = 'block'; });
+$('ctxok').onclick = () => { if (tool === 'poly' && polyPts.length >= 3) { sketch.push({ t: 'poly', pts: polyPts }); props(); } endTool(true); };
+$('ctxcancel').onclick = () => endTool(true);
+addEventListener('pointerdown', (e) => { if (!(e.target as HTMLElement).closest('#ctxm')) ctxm.style.display = 'none'; });
 sk.addEventListener('wheel', (e) => { e.preventDefault(); cam.s = Math.min(80, Math.max(1, cam.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); draw(); }, { passive: false });
 addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).tagName === 'INPUT') return;
   if (e.key === 'Enter' && polyPts.length >= 3) { sketch.push({ t: 'poly', pts: polyPts }); polyPts = []; draw(); props(); }
-  if (e.key === 'Escape') { polyPts = []; segPts = []; drag = null; draw(); }
+  if (e.key === 'Escape') endTool(!(polyPts.length || segPts.length || drag));
 });
 
 // ---------- 3D view ----------
