@@ -42,3 +42,8 @@ const H = (x: number, d: number, dp: number): Spec => ({ kind: 'hole', sketch: [
 near(V(buildBodies(R, [plate, H(20, 5, 0)])), 12000 - Math.PI * 6.25 * 10, 0.01, 'through hole d5');
 near(V(buildBodies(R, [plate, H(20, 5, 4)])), 12000 - Math.PI * 6.25 * 4, 0.01, 'blind hole d5 depth 4 from the top');
 let tH = false; try { buildBodies(R, [plate, H(100, 5, 0)]); } catch { tH = true; } if (!tH) { console.error('FAIL hole off the part'); process.exit(1); } console.log('ok hole off the part rejected');
+
+// Revolve on the exact kernel: rectangle 5..10 x 0..20 about the Z axis is a tube, volume pi (10^2 - 5^2) 20; a circle r3 at x=10 is a torus, volume 2 pi^2 R r^2
+near(V(buildBodies(R, [{ kind: 'revolve', sketch: [rect(5, 0, 10, 20)], depth: 0 }])), Math.PI * 75 * 20, 0.001, 'revolve tube (exact)');
+near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y: 0 }, r: 3 }], depth: 0 }])), 2 * Math.PI ** 2 * 10 * 9, 0.001, 'revolve torus (exact)');
+{ let th = false; try { buildBodies(R, [{ kind: 'revolve', sketch: [rect(-2, 0, 4, 5)], depth: 0 }]); } catch { th = true; } if (!th) { console.error('FAIL revolve across the axis should be rejected'); process.exit(1); } console.log('ok revolve across the axis is rejected'); }
