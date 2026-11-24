@@ -10,7 +10,10 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'none' = 'rect';
+type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
+let dims: Dim[] = [];
+let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
 let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
 let sketch: Entity[] = [];
@@ -36,6 +39,50 @@ function current(): Entity | null {
   if (tool === 'circle') return { t: 'circle', c: drag.start, r: Math.hypot(drag.cur.x - drag.start.x, drag.cur.y - drag.start.y) };
   return null;
 }
+
+// ---------- Dimension tool (driving dimensions, applied directly: no constraint solver yet) ----------
+const dseg = (p: P, a: P, b: P) => { const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy; const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0; return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)); };
+function dimHit(p: P): { e: Entity; w: Dim['w'] } | null {
+  const tol = 8 / cam.s; let best: { e: Entity; w: Dim['w'] } | null = null, bd = tol;
+  for (const e of sketch) {
+    if (e.t === 'line') { const d = dseg(p, e.a, e.b); if (d < bd) { bd = d; best = { e, w: 'len' }; } }
+    else if (e.t === 'circle') { const d = Math.abs(Math.hypot(p.x - e.c.x, p.y - e.c.y) - e.r); if (d < bd) { bd = d; best = { e, w: 'dia' }; } }
+    else if (e.t === 'arc') { const pts = outline(e); for (let i = 0; i + 1 < pts.length; i++) { const d = dseg(p, pts[i], pts[i + 1]); if (d < bd) { bd = d; best = { e, w: 'rad' }; } } }
+    else if (e.t === 'rect') { const o = outline(e); for (let i = 0; i < 4; i++) { const d = dseg(p, o[i], o[(i + 1) % 4]); if (d < bd) { bd = d; best = { e, w: i % 2 === 0 ? 'w' : 'h' }; } } }
+  }
+  return best;
+}
+function dimValue(e: Entity, w: Dim['w']): number {
+  if (e.t === 'line') return Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+  if (e.t === 'circle') return e.r * 2;
+  if (e.t === 'arc') return circle3(e.a, e.b, e.m)?.r ?? 0;
+  if (e.t === 'rect') return w === 'w' ? Math.abs(e.b.x - e.a.x) : Math.abs(e.b.y - e.a.y);
+  return 0;
+}
+function dimApply(e: Entity, w: Dim['w'], v: number) {
+  if (!(v > 0)) throw new Error('Dimension must be greater than 0.');
+  if (e.t === 'circle') { e.r = v / 2; return; }
+  if (e.t === 'rect') { if (w === 'w') e.b.x = e.a.x + Math.sign(e.b.x - e.a.x || 1) * v; else e.b.y = e.a.y + Math.sign(e.b.y - e.a.y || 1) * v; return; }
+  if (e.t === 'line') {
+    const L = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y); if (L < 1e-12) throw new Error('Zero-length line.');
+    const old = { ...e.b }; const nb = { x: e.a.x + ((e.b.x - e.a.x) / L) * v, y: e.a.y + ((e.b.y - e.a.y) / L) * v };
+    for (const o of sketch) { // keep connected end points joined
+      if (o === e) continue;
+      for (const k of ['a', 'b'] as const) if ((o.t === 'line' || o.t === 'arc') && Math.hypot(o[k].x - old.x, o[k].y - old.y) < 1e-6) o[k] = { ...nb };
+    }
+    e.b = nb; return;
+  }
+  if (e.t === 'arc') {
+    const k = circle3(e.a, e.b, e.m); if (!k) throw new Error('Degenerate arc.');
+    const mid = { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }; const half = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) / 2;
+    if (v < half - 1e-9) throw new Error(`Radius must be at least half the chord (${half.toFixed(3)}).`);
+    const h = Math.sqrt(Math.max(0, v * v - half * half)); let nx = k.c.x - mid.x, ny = k.c.y - mid.y; const nl = Math.hypot(nx, ny);
+    if (nl < 1e-9) { nx = -(e.b.y - e.a.y); ny = e.b.x - e.a.x; const sgn = nx * (e.m.x - mid.x) + ny * (e.m.y - mid.y) > 0 ? -1 : 1; nx *= sgn; ny *= sgn; }
+    const L2 = Math.hypot(nx, ny); nx /= L2; ny /= L2; const c2 = { x: mid.x + nx * h, y: mid.y + ny * h };
+    const dx = e.m.x - c2.x, dy = e.m.y - c2.y, dl = Math.hypot(dx, dy) || 1; e.m = { x: c2.x + (dx / dl) * v, y: c2.y + (dy / dl) * v };
+  }
+}
+const dimText = (d: Dim) => { const v = dimValue(d.e, d.w); return (d.w === 'dia' ? '\u00D8' : d.w === 'rad' ? 'R' : '') + (+v.toFixed(3)); };
 function draw() {
   if (mode !== 'sketch') return;
   const dpr = devicePixelRatio; ctx.clearRect(0, 0, sk.width, sk.height);
@@ -55,6 +102,9 @@ function draw() {
     if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
+  dims = dims.filter((d) => sketch.includes(d.e));
+  for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
+  ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
   if (c && drag) { ctx.fillStyle = '#123'; ctx.font = `${13 * dpr}px sans-serif`; const s = toScreen(drag.cur); ctx.fillText(c.t === 'rect' ? `${Math.abs(c.b.x - c.a.x)} x ${Math.abs(c.b.y - c.a.y)} mm` : c.t === 'circle' ? `R ${c.r.toFixed(1)} mm` : '', s.x + 12, s.y - 12); }
 }
@@ -65,6 +115,11 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e);
+  if (tool === 'dim') {
+    const h = dimHit(p); if (!h) { msg('Dimension: click a line, circle, arc or rectangle edge.'); return; }
+    dimTarget = { e: h.e, w: h.w, pos: p }; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
+    const inp = $<HTMLInputElement>('dimin'); inp.value = String(+dimValue(h.e, h.w).toFixed(3)); setTimeout(() => { inp.focus(); inp.select(); }, 0); return;
+  }
   if (tool === 'line') {
     if (!segPts.length) segPts = [p]; else if (Math.hypot(p.x - segPts[0].x, p.y - segPts[0].y) > 1e-9) { sketch.push({ t: 'line', a: segPts[0], b: p }); segPts = [p]; props(); }
     hover = p; draw(); return;
@@ -88,6 +143,14 @@ sk.addEventListener('pointermove', (e) => {
 });
 let downAt = { x: 0, y: 0 };
 sk.addEventListener('pointerup', (ev) => { pan = null; if (drag && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 8) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
+const commitDim = () => {
+  if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
+  try { dimApply(t.e, t.w, parseFloat(inp.value)); if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
+  catch (er) { msg((er as Error).message); return; }
+  dimTarget = null; $('dimbox').style.display = 'none'; draw();
+};
+$('dimok').onclick = commitDim;
+$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; $('dimbox').style.display = 'none'; } });
 const ctxm = $('ctxm');
 const endTool = (exitTool: boolean) => { polyPts = []; segPts = []; drag = null; if (exitTool) { tool = 'none'; refreshButtons(); } ctxm.style.display = 'none'; draw(); };
 sk.addEventListener('contextmenu', (e) => { e.preventDefault(); if (mode !== 'sketch') return; const r = $('gfx').getBoundingClientRect(); ctxm.style.left = e.clientX - r.left + 'px'; ctxm.style.top = e.clientY - r.top + 'px'; ctxm.style.display = 'block'; });
@@ -251,7 +314,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; polyPts = []; segPts = []; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
