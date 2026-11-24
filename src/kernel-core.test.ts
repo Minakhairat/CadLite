@@ -1,7 +1,7 @@
 import { createRequire } from 'module'; const require = createRequire(import.meta.url);
 import * as R from 'replicad';
 import { buildBodies, Spec } from './kernel-core';
-import { Entity } from './geometry';
+import { Entity, resolveLoops } from './geometry';
 const init = require('replicad-opencascadejs');
 R.setOC(await init());
 const near = (a: number, b: number, tol: number, m: string) => { if (Math.abs(a - b) > tol) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(3)); };
@@ -32,3 +32,8 @@ if (!(Math.abs(sh - (12000 - 36 * 26 * 8)) < 0.01 || Math.abs(sh - (44 * 34 * 12
 let tOver = false; try { fv('fillet', 50, 'all'); } catch { tOver = true; } if (!tOver) { console.error('FAIL oversized fillet should throw'); process.exit(1); } console.log('ok oversized fillet rejected');
 let tNo = false; try { buildBodies(R, [plate, { kind: 'fillet', sketch: [], depth: 3, edges: 'vertical' }, { kind: 'chamfer', sketch: [], depth: 1, edges: 'top' }, { kind: 'shell', sketch: [], depth: 1.5, edges: 'top' }]); } catch (e) { tNo = /no effect/.test((e as Error).message); }
 console.log(tNo ? 'ok shell that the kernel cannot apply is reported, not silent' : 'NOTE shell after fillet+chamfer applied');
+// True arcs: half disc from a line + 3-point arc. A sampled arc would be ~0.1 mm3 off; exact arcs match pi*r^2/2*h.
+const half = resolveLoops([{ t: 'line', a: { x: -10, y: 0 }, b: { x: 10, y: 0 } }, { t: 'arc', a: { x: 10, y: 0 }, b: { x: -10, y: 0 }, m: { x: 0, y: 10 } }]);
+near(V(buildBodies(R, [{ kind: 'extrude', sketch: half, depth: 2 }])), (Math.PI * 100 / 2) * 2, 1e-6, 'half disc from line + arc is exact (true arc edge)');
+const rev = resolveLoops([{ t: 'line', a: { x: 10, y: 0 }, b: { x: -10, y: 0 } }, { t: 'arc', a: { x: 10, y: 0 }, b: { x: -10, y: 0 }, m: { x: 0, y: -10 } }]);
+near(V(buildBodies(R, [{ kind: 'extrude', sketch: rev, depth: 2 }])), (Math.PI * 100 / 2) * 2, 1e-6, 'arc below the line, reversed order, exact');
