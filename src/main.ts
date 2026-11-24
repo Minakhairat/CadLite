@@ -6,7 +6,7 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity } from './sketch-ops';
+import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE } from './sketch-ops';
 import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'point' | 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -131,7 +131,7 @@ function draw() {
   ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; const ax = sketchAxesWorld(curPlane, curOrient); ctx.fillText('X (' + ax.x + ')', sk.width - 70 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y (' + ax.y + ')', o.x + 5 * dpr, 14 * dpr); ctx.fillStyle = '#34506f'; ctx.fillText(`${curPlane} plane, normal ${ax.n}`, 8 * dpr, sk.height - 8 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
-  for (const e of all) { ctx.setLineDash(e.cn ? [8 * dpr, 5 * dpr] : []); ctx.strokeStyle = selE.includes(e) ? '#e8590c' : e.cn ? '#7a8794' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
+  for (const e of all) { ctx.setLineDash(e.cn ? [8 * dpr, 5 * dpr] : []); ctx.strokeStyle = selE.includes(e) ? '#e8590c' : e.cn ? '#7a8794' : '#1f6fd1'; if (isPt(e)) { const q = toScreen((e as PointE).p); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(q.x - 6 * dpr, q.y); ctx.lineTo(q.x + 6 * dpr, q.y); ctx.moveTo(q.x, q.y - 6 * dpr); ctx.lineTo(q.x, q.y + 6 * dpr); ctx.stroke(); ctx.beginPath(); ctx.arc(q.x, q.y, 2.5 * dpr, 0, 7); ctx.fillStyle = ctx.strokeStyle; ctx.fill(); } else if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
   ctx.setLineDash([]);
   if (winA && winB) { const a = toScreen(winA), b = toScreen(winB); const cross = winB.x < winA.x; ctx.save(); ctx.setLineDash(cross ? [6 * dpr, 4 * dpr] : []); ctx.strokeStyle = cross ? '#2a8a3a' : '#1f6fd1'; ctx.fillStyle = cross ? 'rgba(42,138,58,0.10)' : 'rgba(31,111,209,0.10)'; ctx.lineWidth = 1.2 * dpr; ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.restore(); }
   if (segPts.length && hover) {
@@ -246,6 +246,7 @@ sk.addEventListener('pointerdown', (e) => {
     dimTarget = { e: h.e, w: h.w, pos: p }; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
     const inp = $<HTMLInputElement>('dimin'); inp.value = String(+dimValue(h.e, h.w).toFixed(3)); setTimeout(() => { inp.focus(); inp.select(); }, 0); return;
   }
+  if (tool === 'point') { sketch.push({ t: 'point', p: { x: p.x, y: p.y } } as unknown as Entity); ck(); props(); draw(); msg(`Point at X ${p.x} Y ${p.y} mm. It is a marker only and is not part of the profile.`); return; }
   if (tool === 'line') {
     if (!segPts.length) segPts = [p]; else if (Math.hypot(p.x - segPts[0].x, p.y - segPts[0].y) > 1e-9) { sketch.push({ t: 'line', a: segPts[0], b: p }); segPts = [p]; props(); }
     hover = p; draw(); return;
@@ -423,6 +424,7 @@ function props() {
       title(`Circle ${i + 1}`); g.append(numField('Center X (mm)', e.c.x, (n) => (e.c.x = n)), numField('Center Y (mm)', e.c.y, (n) => (e.c.y = n)), numField('Radius (mm)', e.r, (n) => n > 0 && (e.r = n)));
     } else if (e.t === 'line') title(`Line ${i + 1} (${Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y).toFixed(2)} mm)`);
     else if (e.t === 'arc') title(`Arc ${i + 1} (3-point)`);
+    else if (isPt(e)) { const pe = e as PointE; title(`Point ${i + 1}`); g.append(numField('X (mm)', pe.p.x, (n) => (pe.p.x = n)), numField('Y (mm)', pe.p.y, (n) => (pe.p.y = n))); }
     else title(`Polygon ${i + 1} (${e.pts.length} points)`);
     const del = document.createElement('button'); del.textContent = 'Delete'; del.onclick = () => { sketch.splice(i, 1); draw(); props(); };
     r.append(g, del); p.append(r);
@@ -522,7 +524,7 @@ addEventListener('keydown', (e) => {
 
 // ---------- actions ----------
 function snapshotSrc(): SketchSrc | null {
-  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || e.cn) && !cons.length && !dims.length) return null;
+  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || isPt(e) || e.cn) && !cons.length && !dims.length) return null;
   const ix = (o: unknown) => sketch.indexOf(o as Entity);
   return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })) };
 }
@@ -548,7 +550,7 @@ $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
   let src: SketchSrc | null = null;
-  try { src = snapshotSrc(); const prof = sketch.filter((e) => !e.cn); if (!prof.length) throw new Error('The sketch has only construction shapes. Draw at least one normal shape for the profile.'); const rl = resolveLoops(prof); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
+  try { src = snapshotSrc(); const prof = sketch.filter((e) => !e.cn && !isPt(e)); if (!prof.length) throw new Error('The sketch has only construction shapes or points. Draw at least one normal shape for the profile.'); const rl = resolveLoops(prof); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
   const kind = editing !== null ? (features[editing].kind as 'extrude' | 'revolve') : null;
   pending = clone(sketch); pendingSrc = src; cons = []; dims = []; sketch = []; setMode('model');
   if (editing !== null && kind) openDlg(kind, features[editing].depth, features[editing].op, features[editing].dir); else msg('Sketch finished. Choose Extrude or Revolve.');
