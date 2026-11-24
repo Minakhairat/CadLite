@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
-import { Entity, Feature, P, buildGeometry, snap, outline, toSTL, volume } from './geometry';
+import { Entity, Feature, P, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -10,7 +10,9 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' = 'rect';
+let segPts: P[] = []; // line chain start / arc clicks in progress
+let hover: P | null = null;
 let sketch: Entity[] = [];
 let pending: Entity[] | null = null; // finished sketch not yet used by a feature
 let features: Feature[] = [];
@@ -47,7 +49,11 @@ function draw() {
   ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; ctx.fillText('X', sk.width - 16 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y', o.x + 5 * dpr, 14 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
-  for (const e of all) { path(outline(e), true); ctx.fillStyle = '#1f6fd11a'; ctx.fill(); ctx.stroke(); }
+  for (const e of all) { if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = '#1f6fd11a'; ctx.fill(); ctx.stroke(); } }
+  if (segPts.length && hover) {
+    ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = tool === 'line' ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
+    if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
+  }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   if (c && drag) { ctx.fillStyle = '#123'; ctx.font = `${13 * dpr}px sans-serif`; const s = toScreen(drag.cur); ctx.fillText(c.t === 'rect' ? `${Math.abs(c.b.x - c.a.x)} x ${Math.abs(c.b.y - c.a.y)} mm` : c.t === 'circle' ? `R ${c.r.toFixed(1)} mm` : '', s.x + 12, s.y - 12); }
 }
@@ -56,6 +62,15 @@ let pan: { x: number; y: number } | null = null;
 sk.addEventListener('pointerdown', (e) => {
   if (e.button === 1 || e.button === 2 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e);
+  if (tool === 'line') {
+    if (!segPts.length) segPts = [p]; else if (Math.hypot(p.x - segPts[0].x, p.y - segPts[0].y) > 1e-9) { sketch.push({ t: 'line', a: segPts[0], b: p }); segPts = [p]; props(); }
+    hover = p; draw(); return;
+  }
+  if (tool === 'arc') {
+    segPts.push(p);
+    if (segPts.length === 3) { const [a, b, mm] = segPts; if (circle3(a, b, mm)) { sketch.push({ t: 'arc', a, b, m: mm }); props(); } else msg('Arc points are on one line: pick a point off the line.'); segPts = []; }
+    hover = p; draw(); return;
+  }
   if (tool === 'poly') {
     if (polyPts.length >= 3 && Math.hypot(p.x - polyPts[0].x, p.y - polyPts[0].y) < grid() * 0.5 + 1e-9) { sketch.push({ t: 'poly', pts: polyPts }); polyPts = []; props(); } else polyPts.push(p);
     draw(); return;
@@ -64,7 +79,7 @@ sk.addEventListener('pointerdown', (e) => {
 });
 sk.addEventListener('pointermove', (e) => {
   if (pan) { cam.x -= ((e.clientX - pan.x) * devicePixelRatio) / cam.s; cam.y += ((e.clientY - pan.y) * devicePixelRatio) / cam.s; pan = { x: e.clientX, y: e.clientY }; draw(); return; }
-  const p = pt(e); $('coord').textContent = `X ${p.x}  Y ${p.y}  mm`;
+  const p = pt(e); hover = p; if (segPts.length) draw(); $('coord').textContent = `X ${p.x}  Y ${p.y}  mm`;
   if (drag) { drag.cur = p; draw(); }
 });
 sk.addEventListener('pointerup', () => { pan = null; if (drag) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
@@ -73,7 +88,7 @@ sk.addEventListener('wheel', (e) => { e.preventDefault(); cam.s = Math.min(80, M
 addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).tagName === 'INPUT') return;
   if (e.key === 'Enter' && polyPts.length >= 3) { sketch.push({ t: 'poly', pts: polyPts }); polyPts = []; draw(); props(); }
-  if (e.key === 'Escape') { polyPts = []; drag = null; draw(); }
+  if (e.key === 'Escape') { polyPts = []; segPts = []; drag = null; draw(); }
 });
 
 // ---------- 3D view ----------
@@ -167,7 +182,9 @@ function props() {
       title(`Rectangle ${i + 1}`); g.append(numField('X (mm)', x, (n) => set(n, y, w, h)), numField('Y (mm)', y, (n) => set(x, n, w, h)), numField('Width (mm)', w, (n) => n > 0 && set(x, y, n, h)), numField('Height (mm)', h, (n) => n > 0 && set(x, y, w, n)));
     } else if (e.t === 'circle') {
       title(`Circle ${i + 1}`); g.append(numField('Center X (mm)', e.c.x, (n) => (e.c.x = n)), numField('Center Y (mm)', e.c.y, (n) => (e.c.y = n)), numField('Radius (mm)', e.r, (n) => n > 0 && (e.r = n)));
-    } else title(`Polygon ${i + 1} (${e.pts.length} points)`);
+    } else if (e.t === 'line') title(`Line ${i + 1} (${Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y).toFixed(2)} mm)`);
+    else if (e.t === 'arc') title(`Arc ${i + 1} (3-point)`);
+    else title(`Polygon ${i + 1} (${e.pts.length} points)`);
     const del = document.createElement('button'); del.textContent = 'Delete'; del.onclick = () => { sketch.splice(i, 1); draw(); props(); };
     r.append(g, del); p.append(r);
   });
@@ -185,7 +202,7 @@ $('clear').onclick = () => { sketch = []; polyPts = []; draw(); props(); };
 $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
-  try { buildGeometry('extrude', sketch, 1); } catch (e) { msg((e as Error).message); return; }
+  try { const rl = resolveLoops(sketch); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
   const kind = editing !== null ? features[editing].kind : null;
   pending = clone(sketch); sketch = []; setMode('model');
   if (editing !== null && kind) openDlg(kind, features[editing].depth); else msg('Sketch finished. Choose Extrude or Revolve.');
@@ -224,7 +241,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; polyPts = []; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; polyPts = []; segPts = []; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
