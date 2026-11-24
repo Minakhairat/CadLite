@@ -14,7 +14,9 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
 let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'none' = 'rect';
-let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null;
+let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
+const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
+const matName = () => MATS[matIdx][0];
 let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
@@ -466,9 +468,9 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
 // ---------- save / open / export ----------
-const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [], ...(pending && pendingSrc ? { pendingSrc } : {}) });
+const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [], ...(pending && pendingSrc ? { pendingSrc } : {}), ...(matIdx ? { mat: matName() } : {}) });
 async function load(text: string) {
-  const d = JSON.parse(text);
+  const d = JSON.parse(text); matIdx = Math.max(0, MATS.findIndex((x) => x[0] === d.mat));
   features.forEach((f) => f.geo.dispose());
   const loaded: Feature[] = d.features.map((f: any) => ({ ...f, sketch: f.sketch ?? [], geo: geoOf(f) }));
   features = []; shown = null; if (!(await applyFeatures(loaded))) { features = loaded; }
@@ -551,7 +553,7 @@ sk.addEventListener('pointerup', tend, true); sk.addEventListener('pointercancel
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !location.hostname.match(/^(localhost|127\.)/)) addEventListener('load', () => setTimeout(() => { const c = (navigator as any).connection; if (navigator.onLine && !(c && c.saveData)) loadKernel().catch(() => {}); }, 5000));
 
 // ---------- Inspect: physical properties (mass, volume, area, center of gravity) ----------
-const MATS: [string, number][] = [['Generic', 1.0], ['Aluminum 6061', 2.70], ['Steel, mild', 7.85], ['Stainless steel 304', 8.0], ['Cast iron', 7.2], ['Copper', 8.96], ['Brass', 8.5], ['Titanium', 4.51], ['Gold', 19.32], ['ABS plastic', 1.05], ['Nylon 6', 1.14], ['Oak wood', 0.75]]; // nominal handbook densities, g/cm3
+
 function physProps() {
   const geos = shown ? shown.map((b) => b.geo) : features.map((f) => f.geo);
   let V = 0, A = 0, cx = 0, cy = 0, cz = 0; const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
@@ -561,7 +563,6 @@ function physProps() {
       A += b.clone().sub(a).cross(c.clone().sub(a)).length() / 2; } }
   const s = V < 0 ? -1 : 1; V *= s; return { bodies: geos.length, vol: V, area: A, cg: V > 1e-12 ? { x: (cx * s) / V, y: (cy * s) / V, z: (cz * s) / V } : null };
 }
-let matIdx = 0;
 function physCard() {
   let box = document.getElementById('phys');
   if (!box) { box = document.createElement('div'); box.id = 'phys'; box.style.cssText = 'position:fixed;left:50%;top:150px;transform:translateX(-50%);z-index:30;width:min(340px,94vw);background:#f4f6fa;border:1px solid #8a93a5;box-shadow:0 4px 14px #0004;border-radius:4px;font-size:12px'; document.body.appendChild(box); }
@@ -570,9 +571,9 @@ function physCard() {
   box.innerHTML = `<h5 style="margin:0;padding:5px 8px;background:#cfd6e2;border-bottom:1px solid #b9c0cf;display:flex;justify-content:space-between">Physical properties<button id="physx" style="border:0;background:none;font-size:14px">\u2715</button></h5><div style="padding:8px;display:grid;gap:5px">`
     + `<label>Material <select id="physmat" style="width:100%;margin-top:2px">${MATS.map((m, i) => `<option value="${i}"${i === matIdx ? ' selected' : ''}>${m[0]} (${m[1]} g/cm\u00B3)</option>`).join('')}</select></label>`
     + (p.bodies ? `<div>Bodies: <b>${p.bodies}</b></div><div>Mass: <b>${f(mass, 5)} kg</b> (${f(mass * 1000, 2)} g, ${f(mass * 2.20462262, 5)} lb)</div><div>Volume: <b>${f(p.vol, 2)} mm\u00B3</b></div><div>Surface area: <b>${f(p.area, 2)} mm\u00B2</b></div>` + (p.cg ? `<div>Center of gravity (model axes, mm): X <b>${f(p.cg.x)}</b>  Y <b>${f(p.cg.y)}</b>  Z <b>${f(p.cg.z)}</b></div>` : '') : '<div>No solid in the part yet. Extrude or revolve a sketch first.</div>')
-    + `<div style="color:#667;font-size:11px">Computed from the display mesh. Exact for flat faces; curved faces are approximated (small error). Densities are nominal handbook values, check your exact alloy. Bodies that overlap are counted separately.</div></div>`;
+    + `<div style="color:#667;font-size:11px">Computed from the display mesh (a triangle approximation); no error bound is guaranteed. Curved faces are approximated, so volume, area and center of gravity are estimates. Density for the chosen material: ${MATS[matIdx][2]}. This is one reference value, real alloys, tempers and moisture differ, so check your own material data. Bodies that overlap are counted separately.</div></div>`;
   (document.getElementById('physx') as HTMLElement).onclick = () => box!.remove();
-  (document.getElementById('physmat') as HTMLSelectElement).onchange = (e) => { matIdx = +(e.target as HTMLSelectElement).value; physCard(); };
+  (document.getElementById('physmat') as HTMLSelectElement).onchange = (e) => { matIdx = +(e.target as HTMLSelectElement).value; physCard(); try { localStorage.setItem('cadlite', serialize()); } catch { /* ignore */ } };
 }
 $('physbtn').onclick = physCard;
 (window as any).__cad.phys = physProps;
