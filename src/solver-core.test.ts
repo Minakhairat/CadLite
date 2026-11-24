@@ -18,3 +18,5 @@ const P = (x: number, y: number) => ({ x, y });
 { const a: L = { a: P(0, 0), b: P(10, 0) }; let t = false; try { solveLines(w, [a], [{ k: 'h', l: a }, { k: 'v', l: a }]); } catch { t = true; } if (!t) { console.error('FAIL conflict not reported'); process.exit(1); } console.log('ok horizontal + vertical on one line is reported as a conflict'); }
 // 6) a driving length together with horizontal
 { const l: L = { a: P(0, 0), b: P(10, 3) }; solveLines(w, [l], [{ k: 'h', l }, { k: 'len', l, v: 25 }]); near(Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y), 25, 1e-6, 'length 25 and horizontal'); near(l.a.y, l.b.y, 1e-6, 'still horizontal'); }
+// 7) Fix pins a line while its neighbour moves with a driving length
+{ const a: L = { a: P(0, 0), b: P(10, 0) }, b: L = { a: P(10, 0), b: P(15, 5) }; solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'len', l: b, v: 20 }, { k: 'v', l: b }]); near(a.a.x, 0, 1e-9, 'fixed line start x'); near(a.b.x, 10, 1e-9, 'fixed line end x'); near(b.a.x, 10, 1e-6, 'neighbour still joined'); near(Math.hypot(b.b.x - b.a.x, b.b.y - b.a.y), 20, 1e-6, 'neighbour length 20'); near(b.b.x, 10, 1e-6, 'neighbour vertical'); }
