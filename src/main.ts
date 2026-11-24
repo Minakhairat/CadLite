@@ -549,3 +549,30 @@ const tend = (e: PointerEvent) => { if (e.pointerType !== 'touch') return; if (h
 sk.addEventListener('pointerup', tend, true); sk.addEventListener('pointercancel', tend, true);
 // Warm the 3D kernel once the page is idle (not on data saver) so the app also works offline later.
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !location.hostname.match(/^(localhost|127\.)/)) addEventListener('load', () => setTimeout(() => { const c = (navigator as any).connection; if (navigator.onLine && !(c && c.saveData)) loadKernel().catch(() => {}); }, 5000));
+
+// ---------- Inspect: physical properties (mass, volume, area, center of gravity) ----------
+const MATS: [string, number][] = [['Generic', 1.0], ['Aluminum 6061', 2.70], ['Steel, mild', 7.85], ['Stainless steel 304', 8.0], ['Cast iron', 7.2], ['Copper', 8.96], ['Brass', 8.5], ['Titanium', 4.51], ['Gold', 19.32], ['ABS plastic', 1.05], ['Nylon 6', 1.14], ['Oak wood', 0.75]]; // nominal handbook densities, g/cm3
+function physProps() {
+  const geos = shown ? shown.map((b) => b.geo) : features.map((f) => f.geo);
+  let V = 0, A = 0, cx = 0, cy = 0, cz = 0; const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (const g of geos) { const pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count;
+    for (let i = 0; i < n; i += 3) { a.fromBufferAttribute(pos, idx ? idx.getX(i) : i); b.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1); c.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2);
+      const v = a.dot(b.clone().cross(c)) / 6; V += v; cx += (v * (a.x + b.x + c.x)) / 4; cy += (v * (a.y + b.y + c.y)) / 4; cz += (v * (a.z + b.z + c.z)) / 4;
+      A += b.clone().sub(a).cross(c.clone().sub(a)).length() / 2; } }
+  const s = V < 0 ? -1 : 1; V *= s; return { bodies: geos.length, vol: V, area: A, cg: V > 1e-12 ? { x: (cx * s) / V, y: (cy * s) / V, z: (cz * s) / V } : null };
+}
+let matIdx = 0;
+function physCard() {
+  let box = document.getElementById('phys');
+  if (!box) { box = document.createElement('div'); box.id = 'phys'; box.style.cssText = 'position:fixed;left:50%;top:150px;transform:translateX(-50%);z-index:30;width:min(340px,94vw);background:#f4f6fa;border:1px solid #8a93a5;box-shadow:0 4px 14px #0004;border-radius:4px;font-size:12px'; document.body.appendChild(box); }
+  const p = physProps(); const d = MATS[matIdx][1]; const mass = (p.vol / 1000) * d / 1000; // mm3 -> cm3 -> g -> kg
+  const f = (x: number, k = 3) => (Math.abs(x) >= 1e5 ? x.toExponential(4) : x.toFixed(k));
+  box.innerHTML = `<h5 style="margin:0;padding:5px 8px;background:#cfd6e2;border-bottom:1px solid #b9c0cf;display:flex;justify-content:space-between">Physical properties<button id="physx" style="border:0;background:none;font-size:14px">\u2715</button></h5><div style="padding:8px;display:grid;gap:5px">`
+    + `<label>Material <select id="physmat" style="width:100%;margin-top:2px">${MATS.map((m, i) => `<option value="${i}"${i === matIdx ? ' selected' : ''}>${m[0]} (${m[1]} g/cm\u00B3)</option>`).join('')}</select></label>`
+    + (p.bodies ? `<div>Bodies: <b>${p.bodies}</b></div><div>Mass: <b>${f(mass, 5)} kg</b> (${f(mass * 1000, 2)} g, ${f(mass * 2.20462262, 5)} lb)</div><div>Volume: <b>${f(p.vol, 2)} mm\u00B3</b></div><div>Surface area: <b>${f(p.area, 2)} mm\u00B2</b></div>` + (p.cg ? `<div>Center of gravity (model axes, mm): X <b>${f(p.cg.x)}</b>  Y <b>${f(p.cg.y)}</b>  Z <b>${f(p.cg.z)}</b></div>` : '') : '<div>No solid in the part yet. Extrude or revolve a sketch first.</div>')
+    + `<div style="color:#667;font-size:11px">Computed from the display mesh. Exact for flat faces; curved faces are approximated (small error). Densities are nominal handbook values, check your exact alloy. Bodies that overlap are counted separately.</div></div>`;
+  (document.getElementById('physx') as HTMLElement).onclick = () => box!.remove();
+  (document.getElementById('physmat') as HTMLSelectElement).onchange = (e) => { matIdx = +(e.target as HTMLSelectElement).value; physCard(); };
+}
+$('physbtn').onclick = physCard;
+(window as any).__cad.phys = physProps;
