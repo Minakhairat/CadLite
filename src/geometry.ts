@@ -148,3 +148,18 @@ export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], dep
   if (dir === 'flip') g.translate(0, 0, -depth); else if (dir === 'sym') g.translate(0, 0, -depth / 2);
   return g;
 }
+
+/** Round the corner where two lines meet at p with radius r. Returns the two new end points and the arc. */
+export function filletCorner(p: P, a: P, b: P, r: number): { t1: P; t2: P; arc: { a: P; b: P; m: P } } {
+  if (!(r > 0)) throw new Error('Fillet radius must be greater than 0.');
+  const la = Math.hypot(a.x - p.x, a.y - p.y), lb = Math.hypot(b.x - p.x, b.y - p.y); if (la < 1e-9 || lb < 1e-9) throw new Error('Zero-length line.');
+  const u = { x: (a.x - p.x) / la, y: (a.y - p.y) / la }, v = { x: (b.x - p.x) / lb, y: (b.y - p.y) / lb };
+  const cos = Math.max(-1, Math.min(1, u.x * v.x + u.y * v.y)); const th = Math.acos(cos);
+  if (th < 1e-3 || Math.abs(th - Math.PI) < 1e-3) throw new Error('The two lines are parallel: no corner to round.');
+  const t = r / Math.tan(th / 2);
+  if (t >= la - 1e-9 || t >= lb - 1e-9) throw new Error(`Radius too large: the tangent length ${t.toFixed(3)} must be shorter than both lines (${Math.min(la, lb).toFixed(3)}).`);
+  const bis = { x: u.x + v.x, y: u.y + v.y }; const bl = Math.hypot(bis.x, bis.y); bis.x /= bl; bis.y /= bl;
+  const d = r / Math.sin(th / 2); const c = { x: p.x + bis.x * d, y: p.y + bis.y * d };
+  const t1 = { x: p.x + u.x * t, y: p.y + u.y * t }, t2 = { x: p.x + v.x * t, y: p.y + v.y * t };
+  return { t1, t2, arc: { a: t1, b: t2, m: { x: c.x - bis.x * r, y: c.y - bis.y * r } } };
+}
