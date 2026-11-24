@@ -465,7 +465,7 @@ async function load(text: string) {
   features = []; shown = null; if (!(await applyFeatures(loaded))) { features = loaded; }
   pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
-(window as any).__cad = { sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
+(window as any).__cad = { cam: () => ({ ...cam }), sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
 setInterval(() => { try { localStorage.setItem('cadlite', serialize()); } catch { /* ignore */ } }, 2000);
 $('save').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([serialize()], { type: 'application/json' })); a.download = 'part.cadlite.json'; a.click(); };
 $('open').onclick = () => $('file').click();
@@ -525,3 +525,16 @@ try { const t = localStorage.getItem('cadlite'); if (t) load(t); } catch { /* ig
 })();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !location.hostname.match(/^(localhost|127\.)/)) addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+// Touch: two fingers on the sketch pinch to zoom and drag to pan. One finger keeps placing points like a mouse click.
+const tpts = new Map<number, { x: number; y: number }>(); let pinch: { d: number; mx: number; my: number } | null = null;
+const tinfo = () => { const a = [...tpts.values()]; return { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1, mx: (a[0].x + a[1].x) / 2, my: (a[0].y + a[1].y) / 2 }; };
+let replaying = false; let held: { id: number; init: PointerEventInit; t: number } | null = null;
+const release = () => { if (!held) return; const h = held; held = null; clearTimeout(h.t); replaying = true; sk.dispatchEvent(new PointerEvent('pointerdown', h.init)); replaying = false; };
+sk.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || replaying) return; tpts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (tpts.size >= 2) { if (held) { clearTimeout(held.t); held = null; } drag = null; pan = null; pinch = tinfo(); e.stopImmediatePropagation(); draw(); return; }
+  // hold the first finger briefly: if a second finger lands it is a pinch, not a click
+  e.stopImmediatePropagation(); held = { id: e.pointerId, init: { pointerId: e.pointerId, pointerType: 'touch', isPrimary: true, clientX: e.clientX, clientY: e.clientY, button: 0, buttons: 1, bubbles: true, cancelable: true }, t: window.setTimeout(release, 70) }; }, true);
+sk.addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch' || !tpts.has(e.pointerId)) return; tpts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (tpts.size >= 2 && pinch) { const n = tinfo(); cam.x -= ((n.mx - pinch.mx) * devicePixelRatio) / cam.s; cam.y += ((n.my - pinch.my) * devicePixelRatio) / cam.s; cam.s = Math.min(80, Math.max(1, cam.s * (n.d / pinch.d))); pinch = n; draw(); e.stopImmediatePropagation(); } else if (pinch) e.stopImmediatePropagation(); }, true);
+const tend = (e: PointerEvent) => { if (e.pointerType !== 'touch') return; if (held && held.id === e.pointerId) release(); const was = pinch; tpts.delete(e.pointerId); if (tpts.size < 2) pinch = tpts.size ? pinch : null; if (was) e.stopImmediatePropagation(); if (!tpts.size) pinch = null; };
+sk.addEventListener('pointerup', tend, true); sk.addEventListener('pointercancel', tend, true);
