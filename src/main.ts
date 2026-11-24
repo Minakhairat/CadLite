@@ -523,3 +523,5 @@ try { const t = localStorage.getItem('cadlite'); if (t) load(t); } catch { /* ig
   });
   document.addEventListener('mouseout', hide); document.addEventListener('click', hide);
 })();
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && !location.hostname.match(/^(localhost|127\.)/)) addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
