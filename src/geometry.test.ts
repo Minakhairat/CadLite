@@ -37,3 +37,9 @@ if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } co
   const end = trimLine(l, cr, { x: 9, y: 0 }); near(end.length, 1, 0, 'trim the end leaves one piece'); near(end[0].b.x, 7, 1e-9, 'kept piece ends at 7');
   near(trimLine(l, [], { x: 5, y: 0 }).length, 0, 0, 'no crossing removes the line');
 }
+{ // sphere display mesh: a drawn arc (3 points) plus the closing line on the axis, joined and revolved
+  const r = 10; const arc: Entity = { t: 'arc', a: { x: 0, y: -r }, b: { x: 0, y: r }, m: { x: r, y: 0 } }; const ln: Entity = { t: 'line', a: { x: 0, y: r }, b: { x: 0, y: -r } };
+  const loops = resolveLoops([arc, ln]); const v = volume(revolve(loops)); const exact = (4 / 3) * Math.PI * r ** 3;
+  console.log('sphere mesh volume', v, 'exact', exact, 'error %', (100 * (v - exact)) / exact);
+  near(v, exact, exact * 0.02, 'sphere display mesh volume within 2 percent of exact (this one case)');
+}
