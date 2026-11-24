@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>MK Cad</title>
+<title>MK CAD</title>
 <link rel="icon" type="image/svg+xml" href="./favicon.svg"/>
 <style>
 :root{--bg:#3b4251;--panel:#e9ecf1;--panel2:#dfe3ea;--line:#b9c0cc;--ink:#1d2330;--accent:#1f6fd1;--green:#2e8b57}
@@ -71,8 +71,9 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
 #dlg{width:250px}
 #title .fam{font-size:10px;opacity:.65;margin:0 8px 0 -2px;border-left:1px solid #ffffff55;padding-left:6px}@media(max-width:800px){#title .fam{display:none}}
 .big.pend{max-width:58px;min-width:50px}.sm{font-size:11px;padding:0 12px 0 3px;gap:3px}
+#foot{height:20px;background:#2a303c;color:#cfd6e2;font-size:11px;display:flex;align-items:center;justify-content:center;white-space:nowrap;padding-bottom:env(safe-area-inset-bottom);flex:none}
 </style></head><body>
-<div id="title"><b>MK Cad</b><span class="fam">MK Tech</span><button id="save" title="Save to a .cadlite.json file">Save</button><button id="open">Open</button><button id="undo" title="Undo last feature">Undo feature</button><input id="file" type="file" accept=".json" hidden/><input class="srch" disabled placeholder="Search Help &amp; Commands (in development)" title="In development (قيد التطوير)"/><span class="doc" id="doc">Part1.cadlite.json (mm)</span></div>
+<div id="title"><b>MK CAD</b><span class="fam">MK Tech</span><button id="save" title="Save to a .cadlite.json file">Save</button><button id="open">Open</button><button id="undo" title="Undo last feature">Undo feature</button><input id="file" type="file" accept=".json" hidden/><input class="srch" disabled placeholder="Search Help &amp; Commands (in development)" title="In development (قيد التطوير)"/><span class="doc" id="doc">Part1.cadlite.json (mm)</span></div>
 <div id="tabs"><button class="pendtab" data-tab="x-File">File</button><button class="act" data-tab="model">3D Model</button><button class="ctx" data-tab="sketch" id="tabsk" style="display:none">Sketch</button><button class="pendtab" data-tab="x-Annotate">Annotate</button><button class="pendtab" data-tab="x-Inspect">Inspect</button><button class="pendtab" data-tab="x-Tools">Tools</button><button class="pendtab" data-tab="x-CAM">CAM</button><button class="pendtab" data-tab="x-Manage">Manage</button><button data-tab="view">View</button><button class="pendtab" data-tab="x-Environments">Environments</button><button class="pendtab" data-tab="x-GetStarted">Get Started</button><button class="pendtab" data-tab="x-Collaborate">Collaborate</button></div>
 <div id="legend">Greyed tools with a dot are <b>in development</b> and do not work yet &middot; الأدوات الرمادية قيد التطوير ولا تعمل بعد</div>
 <div id="ribbon">
@@ -114,4 +115,5 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
  </div>
 </div>
 <div id="status"><button id="bt">Model browser</button><span id="msg">Ready</span><span class="sp" id="coord">mm</span></div>
+<div id="foot">&copy; 2026 MK CAD &middot; Eng. Mina Khairat &middot; <span dir="ltr">01200224513</span></div>
 <script type="module" src="/src/main.ts"></script></body></html>
