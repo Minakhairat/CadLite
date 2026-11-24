@@ -11,7 +11,7 @@ export type Entity = (
   | { t: 'line'; a: P; b: P }
   | { t: 'arc'; a: P; b: P; m: P } // arc: start a, end b, passing through m
 ) & { cn?: boolean }; // cn: construction shape, drawn dashed, never part of the profile
-export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym'; plane?: 'XY' | 'XZ' | 'YZ' };
+export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym'; plane?: 'XY' | 'XZ' | 'YZ'; orient?: { r?: 0 | 1 | 2 | 3; f?: boolean } };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
 
@@ -151,11 +151,17 @@ export function toSketchPlane(g: THREE.BufferGeometry, plane?: 'XY' | 'XZ' | 'YZ
   else if (plane === 'YZ') g.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0)));
   return g;
 }
-export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number, dir?: 'normal' | 'flip' | 'sym', plane?: 'XY' | 'XZ' | 'YZ'): THREE.BufferGeometry {
-  if (kind !== 'extrude') return toSketchPlane(revolve(sketch), plane);
+/** Sketch axis orientation (same meaning as the kernel): r quarter turns about the normal, f flips the normal. Rotations only, so triangle winding stays valid. */
+export function orientGeo(g: THREE.BufferGeometry, o?: { r?: number; f?: boolean }): THREE.BufferGeometry {
+  if (o?.r) g.rotateZ((o.r * Math.PI) / 2);
+  if (o?.f) g.rotateX(Math.PI);
+  return g;
+}
+export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number, dir?: 'normal' | 'flip' | 'sym', plane?: 'XY' | 'XZ' | 'YZ', orient?: { r?: 0 | 1 | 2 | 3; f?: boolean }): THREE.BufferGeometry {
+  if (kind !== 'extrude') return toSketchPlane(orientGeo(revolve(sketch), orient), plane);
   const g = extrude(sketch, depth);
   if (dir === 'flip') g.translate(0, 0, -depth); else if (dir === 'sym') g.translate(0, 0, -depth / 2);
-  return toSketchPlane(g, plane);
+  return toSketchPlane(orientGeo(g, orient), plane);
 }
 
 /** Round the corner where two lines meet at p with radius r. Returns the two new end points and the arc. */
