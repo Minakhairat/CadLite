@@ -28,6 +28,8 @@ let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
 let sketch: Entity[] = [];
 let selE: Entity[] = []; let hist: string[] = []; let redoS: string[] = []; let restoring = false;
+type PlaneId = 'XY' | 'XZ' | 'YZ';
+let curPlane: PlaneId = 'XY'; // plane of the sketch being drawn, edited or waiting for a feature
 let pending: Entity[] | null = null; // finished sketch not yet used by a feature
 let features: Feature[] = [];
 let sel: number | null = null; // selected feature
@@ -116,7 +118,7 @@ function draw() {
   const o = toScreen({ x: 0, y: 0 }); ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#d33'; ctx.beginPath(); ctx.moveTo(0, o.y); ctx.lineTo(sk.width, o.y); ctx.stroke();
   ctx.strokeStyle = '#2a2'; ctx.beginPath(); ctx.moveTo(o.x, 0); ctx.lineTo(o.x, sk.height); ctx.stroke();
-  ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; ctx.fillText('X', sk.width - 16 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y', o.x + 5 * dpr, 14 * dpr);
+  ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; ctx.fillText(curPlane === 'YZ' ? 'Y' : 'X', sk.width - 16 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText(curPlane === 'XY' ? 'Y' : 'Z', o.x + 5 * dpr, 14 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
   for (const e of all) { ctx.strokeStyle = selE.includes(e) ? '#e8590c' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
@@ -287,8 +289,8 @@ const group = new THREE.Group(); scene.add(group);
 let shown: KBody[] | null = null; // kernel result (Join/Cut/Intersect); null = draw each feature
 const isMod = (k: string) => k === 'hole' || k === 'fillet' || k === 'chamfer' || k === 'shell';
 const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' || isMod(f.kind));
-const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir));
-const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges });
+const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any; plane?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir, f.plane));
+const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges, plane: isMod(f.kind) ? undefined : f.plane });
 /** Try a new feature list. Computes the solid when Join/Cut/Intersect is involved. Returns false (and a message) when it fails. */
 async function applyFeatures(next: Feature[]): Promise<boolean> {
   let bodies: KBody[] | null = null;
@@ -479,9 +481,13 @@ function startSketch(from?: Entity[], src?: SketchSrc | null) { selE = []; hist 
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
   if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
-$('ppxy').onclick = () => { $('pp').classList.remove('show'); startSketch(); };
+const pickPlane = (p: PlaneId) => { $('pp').classList.remove('show'); if (!pending) curPlane = p; startSketch(); };
+$('ppxy').onclick = () => pickPlane('XY');
+const ppxz = document.getElementById('ppxz'), ppyz = document.getElementById('ppyz');
+if (ppxz) ppxz.onclick = () => pickPlane('XZ');
+if (ppyz) ppyz.onclick = () => pickPlane('YZ');
 $('ppx').onclick = () => $('pp').classList.remove('show');
-function editFeature(i: number) { if (isMod(features[i].kind)) { editMod(i); return; } editing = i; sel = i; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
+function editFeature(i: number) { if (isMod(features[i].kind)) { editMod(i); return; } editing = i; sel = i; curPlane = features[i].plane ?? 'XY'; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) { pending = null; pendingSrc = null; } editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
 $('clear').onclick = () => { cons = []; sketch = []; polyPts = []; draw(); props(); };
@@ -518,7 +524,7 @@ $('dok').onclick = async () => {
     const depth = parseFloat(($('depth') as HTMLInputElement).value);
     if (dlgKind === 'extrude' && !(depth > 0)) throw new Error('Distance must be greater than 0');
     const op = dlgKind === 'extrude' ? dlgOp : 'new'; const dir = dlgKind === 'extrude' ? dlgDir : 'normal';
-    const geo = buildGeometry(dlgKind, pending, depth || 1, dir); const f: Feature = { kind: dlgKind, depth: depth || 1, sketch: clone(pending), geo, op, dir, ...(pendingSrc ? { src: pendingSrc } : {}) };
+    const geo = buildGeometry(dlgKind, pending, depth || 1, dir, curPlane); const f: Feature = { kind: dlgKind, depth: depth || 1, sketch: clone(pending), geo, op, dir, ...(curPlane !== 'XY' ? { plane: curPlane } : {}), ...(pendingSrc ? { src: pendingSrc } : {}) };
     const next = editing !== null ? features.map((o, i) => (i === editing ? f : o)) : [...features, f];
     if (!needsKernel(next)) {
       const nb = bbox(f.kind, geo).expandByScalar(-1e-6);
@@ -593,7 +599,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
 // ---------- save / open / export ----------
-const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [], ...(pending && pendingSrc ? { pendingSrc } : {}), ...(matIdx ? { mat: matName() } : {}) });
+const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}), ...(f.plane && f.plane !== 'XY' ? { plane: f.plane } : {}) })), sketch: pending ?? [], ...(pending && curPlane !== 'XY' ? { pendingPlane: curPlane } : {}), ...(pending && pendingSrc ? { pendingSrc } : {}), ...(matIdx ? { mat: matName() } : {}) });
 async function load(text: string) {
   let d: any;
   try { d = JSON.parse(text); if (!d || !Array.isArray(d.features)) throw new Error('bad'); } catch { msg('Open failed: this is not a valid MK CAD file. The current model was kept.'); return; }
@@ -611,7 +617,7 @@ async function load(text: string) {
   } else { features = loaded; }
   oldFeatures.forEach((f) => f.geo.dispose()); oldShown?.forEach((x) => x.geo.dispose());
   matIdx = Math.max(0, MATS.findIndex((x) => x[0] === d.mat));
-  pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
+  curPlane = d.pendingPlane === 'XZ' || d.pendingPlane === 'YZ' ? d.pendingPlane : 'XY'; pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
 (window as any).__cad = { cam: () => ({ ...cam }), sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
 (window as any).__cad.pickAt = (x: number, y: number, add = false) => pickEnt({ x, y }, add);
