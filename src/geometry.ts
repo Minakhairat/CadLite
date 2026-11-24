@@ -91,3 +91,7 @@ export function toSTL(geos: THREE.BufferGeometry[]): string {
   }
   return s + 'endsolid cadlite\n';
 }
+
+export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number): THREE.BufferGeometry {
+  return kind === 'extrude' ? extrude(sketch, depth) : revolve(sketch);
+}
