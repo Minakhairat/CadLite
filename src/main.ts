@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
 import { computeBodies, stepOf, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { Entity, Feature, P, filletCorner, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
+import { Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -12,7 +12,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'none' = 'rect';
 let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
@@ -118,6 +118,15 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e);
+  if (tool === 'trim') {
+    let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
+    sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(p, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
+    if (bi < 0) { msg('Trim: click a line (crossing lines only).'); return; }
+    const l = sketch[bi] as Extract<Entity, { t: 'line' }>;
+    const others = sketch.filter((e, i) => i !== bi && e.t === 'line') as Extract<Entity, { t: 'line' }>[];
+    try { const parts = trimLine(l, others, p); sketch.splice(bi, 1, ...parts.map((q) => ({ t: 'line' as const, a: q.a, b: q.b }))); msg(parts.length ? 'Trimmed.' : 'Line removed (it had no crossing).'); props(); draw(); } catch (er) { msg((er as Error).message); }
+    return;
+  }
   if (tool === 'sfil') {
     const tol = (14 * devicePixelRatio) / cam.s; let best: P | null = null; let bd = tol;
     for (const e of sketch) if (e.t === 'line') for (const q of [e.a, e.b]) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = { ...q }; } }
