@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Entity, P, outline, area, inside, circle3 } from './geometry';
 
-export type Body = { kind: 'extrude' | 'revolve'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry };
+export type Body = { kind: string; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry };
 
 const EPS = 1e-9;
 const validE = (e: Entity) => (e.t === 'line' ? Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) > 1e-6 : e.t === 'arc' ? circle3(e.a, e.b, e.m) !== null : e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
