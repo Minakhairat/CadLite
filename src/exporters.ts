@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { Entity, P, outline, area, inside } from './geometry';
+import { Entity, P, outline, area, inside, circle3 } from './geometry';
 
 export type Body = { kind: 'extrude' | 'revolve'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry };
 
 const EPS = 1e-9;
-const validE = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
+const validE = (e: Entity) => (e.t === 'line' ? Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) > 1e-6 : e.t === 'arc' ? circle3(e.a, e.b, e.m) !== null : e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
 
 // ---------------- OBJ (mesh, world coordinates, mm) ----------------
 export function toOBJ(bodies: Body[]): string {
@@ -29,7 +29,9 @@ export function toDXF(sketch: Entity[]): string {
   g(0, 'LAYER'); g(2, '0'); g(70, 0); g(62, 7); g(6, 'CONTINUOUS'); g(0, 'ENDTAB'); g(0, 'ENDSEC');
   g(0, 'SECTION'); g(2, 'ENTITIES');
   for (const e of sketch.filter(validE)) {
-    if (e.t === 'circle') { g(0, 'CIRCLE'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbCircle'); g(10, e.c.x); g(20, e.c.y); g(30, 0); g(40, e.r); }
+    if (e.t === 'line') { g(0, 'LINE'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbLine'); g(10, e.a.x); g(20, e.a.y); g(30, 0); g(11, e.b.x); g(21, e.b.y); g(31, 0); }
+    else if (e.t === 'arc') { const pts = outline(e); g(0, 'LWPOLYLINE'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbPolyline'); g(90, pts.length); g(70, 0); for (const p of pts) { g(10, p.x); g(20, p.y); } }
+    else if (e.t === 'circle') { g(0, 'CIRCLE'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbCircle'); g(10, e.c.x); g(20, e.c.y); g(30, 0); g(40, e.r); }
     else {
       const pts = outline(e);
       g(0, 'LWPOLYLINE'); g(100, 'AcDbEntity'); g(8, '0'); g(100, 'AcDbPolyline'); g(90, pts.length); g(70, 1);
