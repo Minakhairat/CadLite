@@ -48,7 +48,7 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
 #fin2{display:none;position:absolute;right:10px;bottom:34px;z-index:4;background:#2e8b57;color:#fff;border:0;padding:10px 16px;border-radius:20px;font-weight:600;box-shadow:0 2px 8px #0005}
 @media(max-width:800px){#fin2.show{display:block}#title .doc{display:none}#title button{padding:3px 6px}#ribbon{height:100px}.big{min-width:50px;font-size:11px;padding:2px 3px}.fields{grid-template-columns:auto 62px auto 62px}.fields span{white-space:nowrap;font-size:12px}.panel{min-width:0}#p-sketch .panel:last-child{order:-1}#status{height:auto;min-height:24px;white-space:normal;flex-wrap:wrap;gap:2px 8px;padding-top:2px;padding-bottom:2px}#status .sp{display:none}#msg{flex:1;min-width:0}#browser{position:absolute;left:0;top:0;bottom:0;z-index:6;box-shadow:4px 0 14px #0004;transform:translateX(-102%);transition:transform .15s}#browser.open{transform:none}#bt{display:inline-block}#nav{top:80px}#nav button{font-size:9px}#ribbon{height:96px}}
 .sm{display:flex;align-items:center;gap:4px;height:22px;padding:0 4px;white-space:nowrap;text-align:left}.sm svg{width:16px;height:16px;flex:none}
-.smgrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3,22px);gap:0 4px;align-content:center;padding:0 2px}
+.smgrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3,22px);gap:0 0;align-content:center;padding:0 2px}
 .pend:disabled{opacity:.55}.big.pend{font-size:11px;text-align:center;max-width:64px}.pendtab{color:#55606f}.pendmsg{padding:14px 12px;color:#556;line-height:1.5}
 #legend{background:#fff6d6;border-bottom:1px solid #e3d08a;color:#6b5a1d;padding:2px 8px;font-size:11px;line-height:1.35}
 .pend{position:relative}.pend::after{content:"";position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#e0a526}
@@ -65,8 +65,14 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
 #vc .home{position:absolute;left:-2px;top:-2px;width:20px;height:20px;border-radius:10px;background:#fff;border:1px solid #8a93a5;font-size:12px;min-height:0;padding:0}
 #vc button:hover{background:#cfe1fb!important}
 #nav{top:120px!important;right:8px!important;border-radius:6px!important;padding:2px!important}#nav button{width:28px;min-height:28px!important;font-size:14px!important;padding:0!important;border-radius:4px!important}
+#dlg .crumb{font-weight:400;color:#556}#dlg .sec{background:#dfe3ea;border-top:1px solid var(--line);padding:2px 8px;font-weight:600;font-size:11px}
+#dlg .kv{display:flex;justify-content:space-between}#dlg .bool{display:flex;flex-wrap:wrap;gap:3px;align-items:center}#dlg .bool span{width:100%;color:#556;font-size:10px}
+#dlg .bool button{border-color:var(--line);background:#fff;padding:2px 6px;font-size:11px}#dlg .bool button.on{background:#cfe1fb;border-color:var(--accent);opacity:1}
+#dlg{width:250px}
+#title .fam{font-size:10px;opacity:.65;margin:0 8px 0 -2px;border-left:1px solid #ffffff55;padding-left:6px}@media(max-width:800px){#title .fam{display:none}}
+.big.pend{max-width:58px;min-width:50px}.sm{font-size:11px;padding:0 12px 0 3px;gap:3px}
 </style></head><body>
-<div id="title"><b>MK Cad</b><button id="save" title="Save to a .cadlite.json file">Save</button><button id="open">Open</button><button id="undo" title="Undo last feature">Undo feature</button><input id="file" type="file" accept=".json" hidden/><input class="srch" disabled placeholder="Search Help &amp; Commands (in development)" title="In development (قيد التطوير)"/><span class="doc" id="doc">Part1.cadlite.json (mm)</span></div>
+<div id="title"><b>MK Cad</b><span class="fam">MK Tech</span><button id="save" title="Save to a .cadlite.json file">Save</button><button id="open">Open</button><button id="undo" title="Undo last feature">Undo feature</button><input id="file" type="file" accept=".json" hidden/><input class="srch" disabled placeholder="Search Help &amp; Commands (in development)" title="In development (قيد التطوير)"/><span class="doc" id="doc">Part1.cadlite.json (mm)</span></div>
 <div id="tabs"><button class="pendtab" data-tab="x-File">File</button><button class="act" data-tab="model">3D Model</button><button class="ctx" data-tab="sketch" id="tabsk" style="display:none">Sketch</button><button class="pendtab" data-tab="x-Annotate">Annotate</button><button class="pendtab" data-tab="x-Inspect">Inspect</button><button class="pendtab" data-tab="x-Tools">Tools</button><button class="pendtab" data-tab="x-CAM">CAM</button><button class="pendtab" data-tab="x-Manage">Manage</button><button data-tab="view">View</button><button class="pendtab" data-tab="x-Environments">Environments</button><button class="pendtab" data-tab="x-GetStarted">Get Started</button><button class="pendtab" data-tab="x-Collaborate">Collaborate</button></div>
 <div id="legend">Greyed tools with a dot are <b>in development</b> and do not work yet &middot; الأدوات الرمادية قيد التطوير ولا تعمل بعد</div>
 <div id="ribbon">
@@ -97,7 +103,14 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
   <div id="nav"><button data-view="all" title="Zoom All">&#9635;</button><button class="pend" disabled title="Pan: In development (قيد التطوير)">&#9995;</button><button class="pend" disabled title="Zoom: In development (قيد التطوير)">&#128269;</button><button class="pend" disabled title="Orbit: In development (قيد التطوير)">&#8635;</button><button class="pend" disabled title="Look At: In development (قيد التطوير)">&#128065;</button></div>
   <button id="fin2">&#10003; Finish Sketch</button>
   <div id="doctabs"><span>Part1</span></div>
-  <div id="dlg"><h5 id="dlgt">Extrude</h5><div class="in"><label>Distance (mm)<input id="depth" type="number" value="20" min="0.01" step="any"/></label><div id="dlgmsg" style="color:#555"></div></div><div class="ok"><button id="dok">OK</button><button id="dcancel">Cancel</button></div></div>
+  <div id="dlg"><h5><span id="dlgt">Extrude</span> <span class="crumb">&rsaquo; Sketch</span></h5>
+<div class="sec">Input Geometry</div><div class="in"><div class="kv"><span>Profiles</span><b>finished sketch</b></div></div>
+<div class="sec">Behavior</div><div class="in"><label>Distance A (mm)<input id="depth" type="number" value="20" min="0.01" step="any"/></label>
+<div class="bool pendrow"><span>Direction</span><button disabled class="pend" title="Flip / Symmetric / Asymmetric: In development (قيد التطوير)">Flip</button><button disabled class="pend" title="In development (قيد التطوير)">Symmetric</button><button disabled class="pend" title="In development (قيد التطوير)">Asymmetric</button></div>
+<div id="dlgmsg" style="color:#555"></div></div>
+<div class="sec">Output</div><div class="in"><div class="bool"><span>Boolean</span><button class="on" disabled title="New solid body: available">New Solid</button><button disabled class="pend" title="Join: In development (قيد التطوير)">Join</button><button disabled class="pend" title="Cut: In development (قيد التطوير)">Cut</button><button disabled class="pend" title="Intersect: In development (قيد التطوير)">Intersect</button></div></div>
+<div class="sec">Advanced Properties</div>
+<div class="ok"><button id="dok">OK</button><button id="dcancel">Cancel</button></div></div>
  </div>
 </div>
 <div id="status"><button id="bt">Model browser</button><span id="msg">Ready</span><span class="sp" id="coord">mm</span></div>
