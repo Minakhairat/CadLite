@@ -23,4 +23,8 @@ Push to `main`; in repo Settings > Pages choose "GitHub Actions". The workflow i
 ## Mobile (Capacitor)
     npx cap add android && npx cap add ios   # iOS needs a Mac with Xcode
     npm run cap:sync && npm run android      # or ios
-Store release needs Google Play / Apple Developer accounts. Note: `src-tauri/icons` and app icons are not generated yet.
+The `android/` project is generated, not committed: `npx cap add android && bash scripts/android-icons.sh && npm run cap:sync && cd android && ./gradlew assembleDebug` (needs JDK 17 and Android SDK 34; set `sdk.dir` in `android/local.properties`, which is git-ignored). A debug APK is for testing only; a store release needs your own signing key (never commit it) and a Google Play developer account. iOS: run `npx cap add ios` on a Mac with Xcode. Manual-only workflows exist in `.github/workflows/` (android-debug, desktop); they do nothing until you run them, and desktop uses three OS runners.
+
+Status of native apps: Android debug build compiled once, never run on a device. Desktop (Tauri) and iOS are untested.
+
+Icons are original (`assets/icon.svg`).
