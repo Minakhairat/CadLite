@@ -4,7 +4,7 @@ import { toOBJ, toSTEP, toDXF } from './exporters';
 import { solveSketch, Con, L } from './solver';
 import { computeBodies, stepOf, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
+import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -14,7 +14,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
 let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'none' = 'rect';
-let cons: Con[] = []; let conPick: L | null = null;
+let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null;
 let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
@@ -297,7 +297,7 @@ function refreshButtons() {
 function tree() {
   const t = $('tree'); t.innerHTML = '';
   const node = (label: string, d: number, cls: string, click?: () => void, dbl?: () => void, selected = false) => {
-    const n = document.createElement('div'); n.className = 'node' + (selected ? ' sel' : ''); n.style.setProperty('--d', String(d));
+    const n = document.createElement('div'); n.title = label; n.className = 'node' + (selected ? ' sel' : ''); n.style.setProperty('--d', String(d));
     const i = document.createElement('i'); i.className = cls; n.append(i, document.createTextNode(label));
     if (click) n.onclick = click; if (dbl) n.ondblclick = dbl; t.append(n);
   };
@@ -305,6 +305,7 @@ function tree() {
   features.forEach((f, i) => {
     if (f.kind === 'hole') { const c = f.sketch[0] as any; node(`Hole${i + 1}  (Ø${(2 * c.r).toFixed(2)} mm at ${c.c.x}, ${c.c.y}; ${f.depth > 0 ? f.depth + ' mm deep' : 'through all'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, undefined, sel === i); return; }
     if (isMod(f.kind)) { node(`${f.kind[0].toUpperCase()}${f.kind.slice(1)}${i + 1}  (${f.depth} mm, ${f.edges ?? 'all'} ${f.kind === 'shell' ? 'open face' : 'edges'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, undefined, sel === i); return; }
+    node(`${f.kind === 'extrude' ? 'Extrusion' : 'Revolution'}${i + 1}  (${f.kind === 'extrude' ? f.depth + ' mm' : '360\u00B0'}${f.op && f.op !== 'new' ? ', ' + f.op : ''})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
     node(`Sketch${i + 1}`, 2, 's', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
   });
   node('End of Part', 1, 'e');
@@ -337,20 +338,32 @@ function props() {
 }
 
 // ---------- actions ----------
-function startSketch(from?: Entity[]) { cons = []; conPick = null; sketch = from ? clone(from) : pending ? clone(pending) : []; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
+function snapshotSrc(): SketchSrc | null {
+  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc') && !cons.length && !dims.length) return null;
+  const ix = (o: unknown) => sketch.indexOf(o as Entity);
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })) };
+}
+function restoreSrc(s: SketchSrc) {
+  sketch = clone(s.ents); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos }));
+  cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
+}
+function startSketch(from?: Entity[], src?: SketchSrc | null) { cons = []; dims = []; conPick = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
+  if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
+  if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
 $('ppxy').onclick = () => { $('pp').classList.remove('show'); startSketch(); };
 $('ppx').onclick = () => $('pp').classList.remove('show');
-function editFeature(i: number) { if (isMod(features[i].kind)) { msg('Fillet/Chamfer/Shell: delete this feature and add it again to change it.'); return; } editing = i; sel = i; startSketch(features[i].sketch); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
+function editFeature(i: number) { if (isMod(features[i].kind)) { msg('Fillet/Chamfer/Shell: delete this feature and add it again to change it.'); return; } editing = i; sel = i; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
-$('cancelsk').onclick = () => { if (editing === null && sketch.length) pending = null; editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
+$('cancelsk').onclick = () => { if (editing === null && sketch.length) { pending = null; pendingSrc = null; } editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
 $('clear').onclick = () => { cons = []; sketch = []; polyPts = []; draw(); props(); };
 $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
-  try { const rl = resolveLoops(sketch); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
+  let src: SketchSrc | null = null;
+  try { src = snapshotSrc(); const rl = resolveLoops(sketch); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
   const kind = editing !== null ? (features[editing].kind as 'extrude' | 'revolve') : null;
-  pending = clone(sketch); sketch = []; setMode('model');
+  pending = clone(sketch); pendingSrc = src; cons = []; dims = []; sketch = []; setMode('model');
   if (editing !== null && kind) openDlg(kind, features[editing].depth, features[editing].op, features[editing].dir); else msg('Sketch finished. Choose Extrude or Revolve.');
 };
 let dlgOp: 'new' | 'join' | 'cut' | 'intersect' = 'new'; let dlgDir: 'normal' | 'flip' | 'sym' = 'normal';
@@ -369,7 +382,7 @@ function openDlg(kind: 'extrude' | 'revolve', depth = 20, op: typeof dlgOp = 'ne
   $('dlg').classList.add('show');
 }
 $('extrude').onclick = () => openDlg('extrude'); $('revolve').onclick = () => openDlg('revolve');
-$('dcancel').onclick = () => { $('dlg').classList.remove('show'); dlgKind = null; if (editing !== null) { editing = null; pending = null; } };
+$('dcancel').onclick = () => { $('dlg').classList.remove('show'); dlgKind = null; if (editing !== null) { editing = null; pending = null; pendingSrc = null; } };
 function bbox(kind: string, geo: THREE.BufferGeometry) { const g = geo.clone(); if (kind === 'revolve') g.rotateX(Math.PI / 2); g.computeBoundingBox(); const b = g.boundingBox!.clone(); g.dispose(); return b; }
 $('dok').onclick = async () => {
   if (!dlgKind || !pending) return;
@@ -377,7 +390,7 @@ $('dok').onclick = async () => {
     const depth = parseFloat(($('depth') as HTMLInputElement).value);
     if (dlgKind === 'extrude' && !(depth > 0)) throw new Error('Distance must be greater than 0');
     const op = dlgKind === 'extrude' ? dlgOp : 'new'; const dir = dlgKind === 'extrude' ? dlgDir : 'normal';
-    const geo = buildGeometry(dlgKind, pending, depth || 1, dir); const f: Feature = { kind: dlgKind, depth: depth || 1, sketch: clone(pending), geo, op, dir };
+    const geo = buildGeometry(dlgKind, pending, depth || 1, dir); const f: Feature = { kind: dlgKind, depth: depth || 1, sketch: clone(pending), geo, op, dir, ...(pendingSrc ? { src: pendingSrc } : {}) };
     const next = editing !== null ? features.map((o, i) => (i === editing ? f : o)) : [...features, f];
     if (!needsKernel(next)) {
       const nb = bbox(f.kind, geo).expandByScalar(-1e-6);
@@ -387,7 +400,7 @@ $('dok').onclick = async () => {
     const old = editing !== null ? features[editing] : null; const ed = editing;
     if (!(await applyFeatures(next))) { geo.dispose(); return; }
     old?.geo.dispose(); sel = ed !== null ? ed : features.length - 1; editing = null;
-    pending = null; $('dlg').classList.remove('show'); dlgKind = null; rebuild(); setView('home'); tree(); refreshButtons();
+    pending = null; pendingSrc = null; $('dlg').classList.remove('show'); dlgKind = null; rebuild(); setView('home'); tree(); refreshButtons();
     const vol = shown ? shown.reduce((s, x) => s + volume(x.geo), 0) : volume(f.geo);
     msg(`${features.length} feature(s). ${shown ? 'Total volume' : 'Volume of last'}: ${vol.toFixed(1)} mm³${op !== 'new' ? ` (${op})` : ''}`);
     if (mobile()) $('browser').classList.remove('open');
@@ -444,7 +457,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
 // ---------- save / open / export ----------
-const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [] });
+const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [] });
 async function load(text: string) {
   const d = JSON.parse(text);
   features.forEach((f) => f.geo.dispose());
