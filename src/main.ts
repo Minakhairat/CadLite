@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
-import { solveSketch, solveCircleSketch, getW, Con, L } from './solver';
+import { solveSketch, solveCircleSketch, dofSketch, getW, Con, L } from './solver';
 import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
@@ -67,6 +67,9 @@ function applyArcRels() {
     const bad = k === 'aconc' ? Math.hypot(ac.c.x - rc.c.x, ac.c.y - rc.c.y) > 1e-6 * Math.max(1, rc.r) : Math.abs(ac.r - rc.r) > 1e-6 * Math.max(1, rc.r);
     if (bad) throw new Error('These arc constraints conflict: they cannot all be true for the same arc. Nothing was kept.'); }
 }
+let dofVal: number | null = null, dofSeq = 0;
+function refreshDof() { const ls = sketch.filter((e) => e.t === 'line') as L[]; const n = ++dofSeq; if (!ls.length) { if (dofVal !== null) { dofVal = null; draw(); } return; }
+  dofSketch(ls, cons.filter((c) => LINE_KINDS.includes(c.k))).then((d) => d >= 0 ? d : null, () => null).then((d) => { if (n !== dofSeq) return; if (d !== dofVal) { dofVal = d; draw(); } }); }
 async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); }
 async function solveAll0(lines: L[], all: Con[]): Promise<void> {
   await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
@@ -140,6 +143,7 @@ function draw() {
   const o = toScreen({ x: 0, y: 0 }); ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#d33'; ctx.beginPath(); ctx.moveTo(0, o.y); ctx.lineTo(sk.width, o.y); ctx.stroke();
   ctx.strokeStyle = '#2a2'; ctx.beginPath(); ctx.moveTo(o.x, 0); ctx.lineTo(o.x, sk.height); ctx.stroke();
+  if (dofVal !== null) { ctx.font = `${12 * dpr}px sans-serif`; ctx.fillStyle = dofVal === 0 ? '#1a7f37' : '#34506f'; ctx.fillText(dofVal === 0 ? 'Lines: fully constrained (0 DOF)' : `Lines: ${dofVal} DOF left (end points; circles and arcs not counted)`, 10 * dpr, 20 * dpr); }
   ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; const ax = sketchAxesWorld(curPlane, curOrient); ctx.fillText('X (' + ax.x + ')', sk.width - 70 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y (' + ax.y + ')', o.x + 5 * dpr, 14 * dpr); ctx.fillStyle = '#34506f'; ctx.fillText(`${curPlane} plane, normal ${ax.n}`, 8 * dpr, sk.height - 8 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
@@ -441,7 +445,7 @@ function numField(label: string, v: number, on: (n: number) => void) {
   l.append(i); return l;
 }
 function props() {
-  const p = $('props'); p.innerHTML = ''; p.classList.toggle('show', mode === 'sketch' && sketch.length > 0);
+  refreshDof(); const p = $('props'); p.innerHTML = ''; p.classList.toggle('show', mode === 'sketch' && sketch.length > 0);
   sketch.forEach((e, i) => {
     const r = document.createElement('div'); r.className = 'row'; const g = document.createElement('div'); g.className = 'g';
     const title = (t: string) => { const b = document.createElement('b'); b.textContent = t; r.append(b); };
@@ -808,3 +812,4 @@ function physCard() {
 }
 $('physbtn').onclick = physCard;
 (window as any).__cad.phys = physProps;
+(window as any).__cad.dof = () => dofVal;
