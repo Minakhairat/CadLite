@@ -37,3 +37,8 @@ const half = resolveLoops([{ t: 'line', a: { x: -10, y: 0 }, b: { x: 10, y: 0 } 
 near(V(buildBodies(R, [{ kind: 'extrude', sketch: half, depth: 2 }])), (Math.PI * 100 / 2) * 2, 1e-6, 'half disc from line + arc is exact (true arc edge)');
 const rev = resolveLoops([{ t: 'line', a: { x: 10, y: 0 }, b: { x: -10, y: 0 } }, { t: 'arc', a: { x: 10, y: 0 }, b: { x: -10, y: 0 }, m: { x: 0, y: -10 } }]);
 near(V(buildBodies(R, [{ kind: 'extrude', sketch: rev, depth: 2 }])), (Math.PI * 100 / 2) * 2, 1e-6, 'arc below the line, reversed order, exact');
+// Hole: through and blind, drilled from the top face
+const H = (x: number, d: number, dp: number): Spec => ({ kind: 'hole', sketch: [{ t: 'circle', c: { x, y: 15 }, r: d / 2 }], depth: dp });
+near(V(buildBodies(R, [plate, H(20, 5, 0)])), 12000 - Math.PI * 6.25 * 10, 0.01, 'through hole d5');
+near(V(buildBodies(R, [plate, H(20, 5, 4)])), 12000 - Math.PI * 6.25 * 4, 0.01, 'blind hole d5 depth 4 from the top');
+let tH = false; try { buildBodies(R, [plate, H(100, 5, 0)]); } catch { tH = true; } if (!tH) { console.error('FAIL hole off the part'); process.exit(1); } console.log('ok hole off the part rejected');
