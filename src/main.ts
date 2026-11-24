@@ -4,6 +4,7 @@ import { toOBJ, toSTEP, toDXF } from './exporters';
 import { solveSketch, Con, L } from './solver';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
+import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf } from './sketch-ops';
 import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -13,7 +14,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -24,6 +25,7 @@ let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
 let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
 let sketch: Entity[] = [];
+let selE: Entity[] = []; let hist: string[] = []; let redoS: string[] = []; let restoring = false;
 let pending: Entity[] | null = null; // finished sketch not yet used by a feature
 let features: Feature[] = [];
 let sel: number | null = null; // selected feature
@@ -92,6 +94,7 @@ function dimApply(e: Entity, w: Dim['w'], v: number) {
 const dimText = (d: Dim) => { const v = dimValue(d.e, d.w); return (d.w === 'dia' ? '\u00D8' : d.w === 'rad' ? 'R' : '') + (+v.toFixed(3)); };
 function draw() {
   if (mode !== 'sketch') return;
+  ck();
   const dpr = devicePixelRatio; ctx.clearRect(0, 0, sk.width, sk.height);
   const g = grid(); ctx.lineWidth = 1; ctx.strokeStyle = '#dfe3ea';
   const a = toWorld(0, sk.height), b = toWorld(sk.width, 0);
@@ -103,7 +106,7 @@ function draw() {
   ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; ctx.fillText('X', sk.width - 16 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y', o.x + 5 * dpr, 14 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
-  for (const e of all) { if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = '#1f6fd11a'; ctx.fill(); ctx.stroke(); } }
+  for (const e of all) { ctx.strokeStyle = selE.includes(e) ? '#e8590c' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
   if (segPts.length && hover) {
     ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = tool === 'line' ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
     if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
@@ -124,6 +127,7 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e); const pr = ptRaw(e);
+  if (tool === 'select') { pickEnt(pr, e.ctrlKey || e.metaKey); return; }
   if (tool === 'ccoin') {
     let bd = (14 * devicePixelRatio) / cam.s, best: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null;
     for (const en of sketch) if (en.t === 'line') for (const e2 of [0, 1]) { const q = e2 ? en.b : en.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd && !(conEnd && conEnd.l === en)) { bd = d; best = { l: en, e: e2 }; } }
@@ -348,6 +352,75 @@ function props() {
   });
 }
 
+
+// ---------- sketch editing: select, move, copy, rotate, mirror, offset, delete, undo/redo ----------
+function fullSnap(): SketchSrc {
+  const ix = (o: unknown) => sketch.indexOf(o as Entity);
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })) };
+}
+function ck() {
+  if (restoring || mode !== 'sketch') return;
+  const s = JSON.stringify(fullSnap());
+  if (s !== hist[hist.length - 1]) { hist.push(s); redoS = []; if (hist.length > 100) hist.shift(); }
+}
+function applySnap(s: string) { restoring = true; try { restoreSrc(JSON.parse(s)); selE = []; } finally { restoring = false; } props(); draw(); }
+function undoSk() { if (mode !== 'sketch') return; ck(); if (hist.length < 2) { msg('Nothing to undo.'); return; } redoS.push(hist.pop()!); applySnap(hist[hist.length - 1]); msg('Undone.'); }
+function redoSk() { if (mode !== 'sketch' || !redoS.length) { msg('Nothing to redo.'); return; } const s = redoS.pop()!; hist.push(s); applySnap(s); msg('Redone.'); }
+function distTo(e: Entity, p: P): number {
+  const pts = outline(e); const closed = !(e.t === 'line' || e.t === 'arc'); let best = Infinity;
+  for (let i = 0; i < pts.length - (closed ? 0 : 1); i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy; const t = L2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2)) : 0; best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))); }
+  return best;
+}
+function pickEnt(p: P, add: boolean) {
+  const tol = (10 * devicePixelRatio) / cam.s; let best: Entity | null = null, bd = tol;
+  for (const e of sketch) { const d = distTo(e, p); if (d < bd) { bd = d; best = e; } }
+  if (!best) { if (!add) selE = []; } else if (add) selE = selE.includes(best) ? selE.filter((x) => x !== best) : [...selE, best]; else selE = [best];
+  msg(selE.length ? `${selE.length} shape(s) selected.` : 'Nothing selected.'); draw();
+}
+const usedByCon = (e: Entity) => cons.some((c) => c.l === (e as unknown) || c.m === (e as unknown)) || dims.some((d) => d.e === e);
+function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).`); }
+type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off';
+let xop: XOp = 'move';
+const xf = (id: string) => parseFloat((document.getElementById(id) as HTMLInputElement).value);
+function xOpen(op: XOp) {
+  if (mode !== 'sketch') return;
+  if (!selE.length) { tool = 'select'; refreshButtons(); msg('Select the shapes first: click them with the Select tool (Ctrl+click adds), then press the command again.'); return; }
+  xop = op; const L = (t: string, id: string, v: string) => `<label>${t}<input id="${id}" type="number" step="any" value="${v}"/></label>`;
+  const T = { move: 'Move', copy: 'Copy', rot: 'Rotate', mir: 'Mirror', off: 'Offset' }[op]; $('xt').textContent = `${T} (${selE.length} selected)`;
+  const keep = (on: boolean) => `<label style="display:flex;gap:6px;align-items:center"><input id="xkeep" type="checkbox" style="width:auto" ${on ? 'checked' : ''}/>Keep the original</label>`;
+  $('xin').innerHTML = op === 'move' ? L('X distance (mm)', 'xa', '0') + L('Y distance (mm)', 'xb', '0')
+    : op === 'copy' ? L('X offset (mm)', 'xa', '10') + L('Y offset (mm)', 'xb', '0') + L('Number of copies', 'xn', '1')
+    : op === 'rot' ? L('Angle (deg, counter-clockwise)', 'xa', '90') + L('Centre X (mm)', 'xb', '0') + L('Centre Y (mm)', 'xc', '0') + keep(false)
+    : op === 'mir' ? `<label>Axis<select id="xax"><option value="y">Y axis (x = 0)</option><option value="x">X axis (y = 0)</option><option value="c">Line through two points</option></select></label>` + L('Point 1 X', 'xa', '0') + L('Point 1 Y', 'xb', '0') + L('Point 2 X', 'xc', '0') + L('Point 2 Y', 'xd', '10') + keep(true)
+    : L('Distance (mm). Positive = outward / left of the line', 'xa', '5');
+  $('xdlg').classList.add('show');
+}
+function xApply() {
+  const sel0 = [...selE]; let out: Entity[] = []; let keepOrig = false; const bad = (m: string) => { msg(m); };
+  try {
+    if (xop === 'move') { const a = xf('xa'), b = xf('xb'); if (![a, b].every(Number.isFinite)) return bad('Enter numbers.'); out = sel0.map((e) => transformEntity(e, moveTf(a, b))); }
+    else if (xop === 'copy') { const a = xf('xa'), b = xf('xb'), n = Math.round(xf('xn')); if (![a, b].every(Number.isFinite) || !(n >= 1 && n <= 200)) return bad('Enter numbers (copies 1 to 200).'); keepOrig = true; for (let k = 1; k <= n; k++) out.push(...sel0.map((e) => transformEntity(e, moveTf(a * k, b * k)))); }
+    else if (xop === 'rot') { const a = xf('xa'), cx = xf('xb'), cy = xf('xc'); if (![a, cx, cy].every(Number.isFinite)) return bad('Enter numbers.'); keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked; out = sel0.map((e) => transformEntity(e, rotateTf({ x: cx, y: cy }, a))); }
+    else if (xop === 'mir') {
+      const ax = (document.getElementById('xax') as HTMLSelectElement).value; keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked;
+      const p1 = ax === 'y' ? { x: 0, y: 0 } : ax === 'x' ? { x: 0, y: 0 } : { x: xf('xa'), y: xf('xb') }; const p2 = ax === 'y' ? { x: 0, y: 1 } : ax === 'x' ? { x: 1, y: 0 } : { x: xf('xc'), y: xf('xd') };
+      if (![p1.x, p1.y, p2.x, p2.y].every(Number.isFinite) || Math.hypot(p2.x - p1.x, p2.y - p1.y) < 1e-9) return bad('Choose two different points for the axis.');
+      out = sel0.map((e) => transformEntity(e, mirrorTf(p1, p2)));
+    } else { const d = xf('xa'); if (!Number.isFinite(d) || d === 0) return bad('Enter a distance other than 0.'); keepOrig = true; const r = sel0.map((e) => offsetEntity(e, d)); const fail = r.findIndex((x) => !x); if (fail >= 0) return bad(`Offset is not possible for ${sel0[fail].t === 'poly' ? 'a polygon (not supported yet)' : 'this shape at that distance'}. Nothing changed.`); out = r as Entity[]; }
+  } catch (er) { return bad((er as Error).message); }
+  if (!keepOrig) { const locked = sel0.find(usedByCon); if (locked) return bad('A selected shape has constraints or dimensions, so it cannot be moved in place. Use Copy or Keep the original, or remove them. Nothing changed.'); sketch = sketch.filter((e) => !sel0.includes(e)); }
+  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset' }[xop]} ${sel0.length} shape(s).`);
+}
+$('xmove').onclick = () => xOpen('move'); $('xcopy').onclick = () => xOpen('copy'); $('xrot').onclick = () => xOpen('rot'); $('xmir').onclick = () => xOpen('mir'); $('xoff').onclick = () => xOpen('off');
+$('xdel').onclick = deleteSel; $('xundo').onclick = undoSk; $('xredo').onclick = redoSk; $('xok').onclick = xApply; $('xcancel').onclick = () => $('xdlg').classList.remove('show');
+addEventListener('keydown', (e) => {
+  const t = (e.target as HTMLElement).tagName; if (t === 'INPUT' || t === 'SELECT' || mode !== 'sketch') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selE.length) { e.preventDefault(); deleteSel(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redoSk() : undoSk(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redoSk(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); selE = [...sketch]; draw(); msg(`${selE.length} shape(s) selected.`); }
+});
+
 // ---------- actions ----------
 function snapshotSrc(): SketchSrc | null {
   if (!sketch.some((e) => e.t === 'line' || e.t === 'arc') && !cons.length && !dims.length) return null;
@@ -358,7 +431,7 @@ function restoreSrc(s: SketchSrc) {
   sketch = clone(s.ents); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos }));
   cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
 }
-function startSketch(from?: Entity[], src?: SketchSrc | null) { cons = []; dims = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
+function startSketch(from?: Entity[], src?: SketchSrc | null) { selE = []; hist = []; redoS = []; cons = []; dims = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
   if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
@@ -497,6 +570,8 @@ async function load(text: string) {
   pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
 (window as any).__cad = { cam: () => ({ ...cam }), sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
+(window as any).__cad.pickAt = (x: number, y: number, add = false) => pickEnt({ x, y }, add);
+(window as any).__cad.selCount = () => selE.length;
 setInterval(() => { try { localStorage.setItem('cadlite', serialize()); } catch { /* ignore */ } }, 2000);
 $('save').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([serialize()], { type: 'application/json' })); a.download = 'part.cadlite.json'; a.click(); };
 $('open').onclick = () => $('file').click();
