@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copies generated launcher icons into the Capacitor Android project and removes the default adaptive icon.
 set -e
-npx tauri icon assets/icon.png --output /tmp/cadlite-icons >/dev/null
+npx tauri icon assets/icon.svg --output /tmp/cadlite-icons >/dev/null
 RES=android/app/src/main/res
 for d in /tmp/cadlite-icons/android/mipmap-*; do
   n=$(basename "$d"); [ "$n" = "mipmap-anydpi-v26" ] && continue
