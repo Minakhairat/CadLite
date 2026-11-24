@@ -8,7 +8,7 @@ export type Entity =
   | { t: 'poly'; pts: P[]; segs?: Seg[] }
   | { t: 'line'; a: P; b: P }
   | { t: 'arc'; a: P; b: P; m: P }; // arc: start a, end b, passing through m
-export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym' };
+export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym' };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
 
