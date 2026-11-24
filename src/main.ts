@@ -119,6 +119,7 @@ function showTab(t: string) {
   document.querySelectorAll<HTMLElement>('#tabs button').forEach((b) => b.classList.toggle('act', b.dataset.tab === t));
   document.querySelectorAll<HTMLElement>('.tabpane').forEach((p) => p.classList.toggle('show', p.id === 'p-' + t));
 }
+document.querySelectorAll<HTMLButtonElement>('[data-proxy]').forEach((b) => (b.onclick = () => { $(b.dataset.proxy!).click(); showTab('model'); }));
 document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab!)));
 function setMode(m: Mode) {
   mode = m; $('sk').style.display = m === 'sketch' ? 'block' : 'none'; $('v3').style.display = m === 'sketch' ? 'none' : 'block';
