@@ -41,3 +41,15 @@ export function scaleEntity(e: Entity, c: P, k: number): Entity | null {
   const r = transformEntity(e, scaleTf(c, k));
   return r.t === 'circle' ? { ...r, r: e.t === 'circle' ? e.r * k : r.r } : r;
 }
+
+export type Win = { x0: number; y0: number; x1: number; y1: number };
+const inWin = (w: Win, p: P) => p.x >= Math.min(w.x0, w.x1) - 1e-9 && p.x <= Math.max(w.x0, w.x1) + 1e-9 && p.y >= Math.min(w.y0, w.y1) - 1e-9 && p.y <= Math.max(w.y0, w.y1) + 1e-9;
+/** Stretch: points inside the window move by (dx, dy), points outside stay. Returns the entity (same object when nothing is inside), or null when a part of an arc would be cut by the window (not supported). */
+export function stretchEntity(e: Entity, w: Win, dx: number, dy: number): Entity | null {
+  const f: Tf = (p) => (inWin(w, p) ? { x: p.x + dx, y: p.y + dy } : p);
+  if (e.t === 'circle') return inWin(w, e.c) ? transformEntity(e, moveTf(dx, dy)) : e;
+  if (e.t === 'arc') { const ia = inWin(w, e.a), ib = inWin(w, e.b); if (ia && ib) return transformEntity(e, moveTf(dx, dy)); return ia || ib ? null : e; }
+  if (e.t === 'poly' && e.segs && e.segs.some((s) => s.m)) { const ins = e.pts.filter((p) => inWin(w, p)).length; return ins === 0 ? e : ins === e.pts.length ? transformEntity(e, moveTf(dx, dy)) : null; }
+  const pts = e.t === 'line' ? [e.a, e.b] : e.t === 'rect' ? [e.a, e.b, { x: e.a.x, y: e.b.y }, { x: e.b.x, y: e.a.y }] : e.pts;
+  return pts.some((p) => inWin(w, p)) ? transformEntity(e, f) : e;
+}
