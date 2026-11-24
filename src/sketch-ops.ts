@@ -1,6 +1,8 @@
 // Pure 2D sketch transforms (Move / Copy / Rotate / Mirror / Offset). No DOM, no solver.
 import { Entity, P, circle3 } from './geometry';
 
+export type PointE = { t: 'point'; p: P; cn?: boolean };
+export const isPt = (e: Entity): e is Entity & PointE => (e as { t: string }).t === 'point';
 export type Tf = (p: P) => P;
 export const moveTf = (dx: number, dy: number): Tf => (p) => ({ x: p.x + dx, y: p.y + dy });
 /** Rotate counter-clockwise by deg degrees about c. */
@@ -12,6 +14,7 @@ const aligned = (a: P, b: P) => Math.abs(a.x - b.x) < 1e-9 || Math.abs(a.y - b.y
 
 /** A transformed copy of one entity. A rectangle that stops being axis-aligned becomes a 4-point polygon. */
 export function transformEntity(e: Entity, f: Tf): Entity {
+  if (isPt(e)) return { t: 'point', p: f((e as PointE).p) } as unknown as Entity;
   switch (e.t) {
     case 'line': return { t: 'line', a: f(e.a), b: f(e.b) };
     case 'arc': return { t: 'arc', a: f(e.a), b: f(e.b), m: f(e.m) };
@@ -50,6 +53,6 @@ export function stretchEntity(e: Entity, w: Win, dx: number, dy: number): Entity
   if (e.t === 'circle') return inWin(w, e.c) ? transformEntity(e, moveTf(dx, dy)) : e;
   if (e.t === 'arc') { const ia = inWin(w, e.a), ib = inWin(w, e.b); if (ia && ib) return transformEntity(e, moveTf(dx, dy)); return ia || ib ? null : e; }
   if (e.t === 'poly' && e.segs && e.segs.some((s) => s.m)) { const ins = e.pts.filter((p) => inWin(w, p)).length; return ins === 0 ? e : ins === e.pts.length ? transformEntity(e, moveTf(dx, dy)) : null; }
-  const pts = e.t === 'line' ? [e.a, e.b] : e.t === 'rect' ? [e.a, e.b, { x: e.a.x, y: e.b.y }, { x: e.b.x, y: e.a.y }] : e.pts;
+  const pts = isPt(e) ? [(e as PointE).p] : e.t === 'line' ? [e.a, e.b] : e.t === 'rect' ? [e.a, e.b, { x: e.a.x, y: e.b.y }, { x: e.b.x, y: e.a.y }] : e.pts;
   return pts.some((p) => inWin(w, p)) ? transformEntity(e, f) : e;
 }
