@@ -72,13 +72,17 @@ function refreshDof() { const ls = sketch.filter((e) => e.t === 'line') as L[]; 
   dofSketch(ls, cons.filter((c) => LINE_KINDS.includes(c.k))).then((d) => d >= 0 ? d : null, () => null).then((d) => { if (n !== dofSeq) return; if (d !== dofVal) { dofVal = d; draw(); } }); }
 /** Persistent Point-on-end relation (kind 'pcoin'): the Point marker follows the chosen end point of a line, re-applied after every solve. */
 function applyPointRels() {
-  for (const c of cons) { if ((c.k as string) !== 'pcoin') continue; const pe = c.l as unknown as PointE, ln = c.m as unknown as { a: P; b: P }; if (!sketch.includes(pe as unknown as Entity) || !sketch.includes(ln as unknown as Entity)) continue; const q = (c.v ?? 0) ? ln.b : ln.a; pe.p = { x: q.x, y: q.y }; } }
+  for (const c of cons) { const k = c.k as string; if (!PT_KINDS.includes(k)) continue; const pe = c.l as unknown as PointE, tg = c.m as unknown as Entity; if (!sketch.includes(pe as unknown as Entity) || !sketch.includes(tg)) continue;
+    if (k === 'pcoin') { const ln = tg as unknown as { a: P; b: P }; const q = (c.v ?? 0) ? ln.b : ln.a; pe.p = { x: q.x, y: q.y }; }
+    else if (k === 'pcol') { const ln = tg as unknown as { a: P; b: P }; const dx = ln.b.x - ln.a.x, dy = ln.b.y - ln.a.y, L2 = dx * dx + dy * dy; if (L2 > 1e-12) { const u = ((pe.p.x - ln.a.x) * dx + (pe.p.y - ln.a.y) * dy) / L2; pe.p = { x: ln.a.x + u * dx, y: ln.a.y + u * dy }; } }
+    else { const ci = tg as unknown as { c: P; r: number }; const dx = pe.p.x - ci.c.x, dy = pe.p.y - ci.c.y, d = Math.hypot(dx, dy); if (d > 1e-9) pe.p = { x: ci.c.x + dx / d * ci.r, y: ci.c.y + dy / d * ci.r }; } } }
+const PT_KINDS = ['pcoin', 'pcol', 'pcoc'];
 async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); applyPointRels(); }
 async function solveAll0(lines: L[], all: Con[]): Promise<void> {
   await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
   const ac = all.filter((c) => (c.k as string) === 'tanla');
   if (ac.length) { const arcs = sketch.filter((e) => e.t === 'arc') as unknown as { a: P; b: P; m: P }[]; solveArcs((await getW()) as never, lines, arcs, ac.map((c) => ({ k: 'tanla' as const, arc: c.l as never, l: c.m as never })) as never); }
-  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr' && (c.k as string) !== 'pcoin'); if (!cc.length) return;
+  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr' && !PT_KINDS.includes(c.k as string)); if (!cc.length) return;
   const circles = sketch.filter((e) => e.t === 'circle') as unknown as { c: P; r: number }[];
   await solveCircleSketch(lines, circles, cc.map((c) => ({ k: c.k as 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad', ...(c.v !== undefined ? { v: c.v } : {}), c: (c.k === 'tanlc' ? c.l : c.l) as never, ...(c.k === 'tanlc' ? { l: c.m } : c.m ? { d: c.m as never } : {}) })) as never);
 }
@@ -159,7 +163,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)) && (!c.n || sketch.includes(c.n as Entity)));
-  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if ((c.k as string) === 'pcoin') { const s = toScreen((c.l as unknown as PointE).p); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(s.x, s.y, 7 * dpr, 0, 7); ctx.stroke(); continue; } if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (PT_KINDS.includes(c.k as string)) { const s = toScreen((c.l as unknown as PointE).p); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(s.x, s.y, 7 * dpr, 0, 7); ctx.stroke(); continue; } if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
@@ -237,11 +241,16 @@ sk.addEventListener('pointerdown', (e) => {
   if (tool === 'cpt') {
     if (!ptPick || !sketch.includes(ptPick as unknown as Entity)) { ptPick = null; let bp: PointE | null = null, bd = (10 * devicePixelRatio) / cam.s; for (const e of sketch) if (isPt(e)) { const d = Math.hypot((e as PointE).p.x - pr.x, (e as PointE).p.y - pr.y); if (d < bd) { bd = d; bp = e as PointE; } }
       if (!bp) { msg('Point on end: click a Point marker first.'); return; }
-      if (cons.some((x) => (x.k as string) === 'pcoin' && (x.l as unknown) === bp)) { msg('This Point is already attached to a line end.'); return; }
-      ptPick = bp; msg('Now click the line end point the Point should follow.'); return; }
+      if (cons.some((x) => PT_KINDS.includes(x.k as string) && (x.l as unknown) === bp)) { msg('This Point is already attached.'); return; }
+      ptPick = bp; msg('Now click a line end point (follows that end), a line (stays on it) or a circle (stays on it).'); return; }
     let best: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null, bd2 = (10 * devicePixelRatio) / cam.s;
     for (const e of sketch) if (e.t === 'line') for (const k of [0, 1]) { const q = k ? e.b : e.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd2) { bd2 = d; best = { l: e, e: k }; } }
-    if (!best) { msg('Click near a line end point.'); return; }
+    if (!best) {
+      const tol = (10 * devicePixelRatio) / cam.s; let tg: Entity | null = null, kk = '', bd3 = tol;
+      for (const e of sketch) { if (e.t === 'line') { const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue; const u = Math.max(0, Math.min(1, ((pr.x - e.a.x) * dx + (pr.y - e.a.y) * dy) / L2)); const d = Math.hypot(pr.x - (e.a.x + u * dx), pr.y - (e.a.y + u * dy)); if (d < bd3) { bd3 = d; tg = e; kk = 'pcol'; } } else if (e.t === 'circle') { const d = Math.abs(Math.hypot(pr.x - e.c.x, pr.y - e.c.y) - e.r); if (d < bd3) { bd3 = d; tg = e; kk = 'pcoc'; } } }
+      if (!tg) { msg('Click near a line end point, a line or a circle.'); return; }
+      const c2: Con = { k: kk as Con['k'], l: ptPick as unknown as L, m: tg as unknown as L }; ptPick = null; cons.push(c2); applyPointRels(); ck(); msg(kk === 'pcol' ? 'Point on line: it is projected onto the line and follows it (one-way).' : 'Point on circle: it is moved onto the circle and follows it (one-way).'); props(); draw(); return;
+    }
     const c: Con = { k: 'pcoin' as Con['k'], l: ptPick as unknown as L, m: best.l as unknown as L, v: best.e }; ptPick = null; cons.push(c); applyPointRels(); ck(); msg('Point attached: it now follows that line end (one-way: the line does not follow the Point).'); props(); draw(); return;
   }
   if (tool === 'csym') {
