@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
 import { computeBodies, stepOf, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { Entity, Feature, P, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
+import { Entity, Feature, P, filletCorner, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -12,7 +12,8 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'none' = 'rect';
+let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
 let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
@@ -117,6 +118,15 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e);
+  if (tool === 'sfil') {
+    const tol = (14 * devicePixelRatio) / cam.s; let best: P | null = null; let bd = tol;
+    for (const e of sketch) if (e.t === 'line') for (const q of [e.a, e.b]) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = { ...q }; } }
+    if (!best) { msg('Fillet: click a corner where two lines meet.'); return; }
+    const n = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - best!.x, q.y - best!.y) < 1e-6)).length;
+    if (n !== 2) { msg(n < 2 ? 'Fillet: that point is not a corner of two lines.' : 'Fillet: more than two lines meet there.'); return; }
+    filPt = best; dimTarget = null; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
+    const inp = $<HTMLInputElement>('dimin'); inp.value = String(filR); msg('Fillet radius (mm): type the value, then OK or Enter.'); setTimeout(() => { inp.focus(); inp.select(); }, 0); return;
+  }
   if (tool === 'dim') {
     const h = dimHit(p); if (!h) { msg('Dimension: click a line, circle, arc or rectangle edge.'); return; }
     dimTarget = { e: h.e, w: h.w, pos: p }; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
@@ -145,14 +155,27 @@ sk.addEventListener('pointermove', (e) => {
 });
 let downAt = { x: 0, y: 0 };
 sk.addEventListener('pointerup', (ev) => { pan = null; if (drag && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 8) { const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); } });
+const commitFillet = () => {
+  const P0 = filPt!; const r = parseFloat($<HTMLInputElement>('dimin').value);
+  try {
+    const ls = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - P0.x, q.y - P0.y) < 1e-6)) as Extract<Entity, { t: 'line' }>[];
+    const far = (l: Extrude_L) => (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6 ? l.b : l.a);
+    const f = filletCorner(P0, far(ls[0]), far(ls[1]), r);
+    const set = (l: Extrude_L, q: P) => { if (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6) l.a = { ...q }; else l.b = { ...q }; };
+    set(ls[0], f.t1); set(ls[1], f.t2); sketch.push({ t: 'arc', ...f.arc }); filR = r; msg(`Fillet R${+r.toFixed(3)} mm added.`); props();
+  } catch (er) { msg((er as Error).message); return; }
+  filPt = null; $('dimbox').style.display = 'none'; draw();
+};
+type Extrude_L = Extract<Entity, { t: 'line' }>;
 const commitDim = () => {
+  if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
   try { dimApply(t.e, t.w, parseFloat(inp.value)); if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
   catch (er) { msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
 $('dimok').onclick = commitDim;
-$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; $('dimbox').style.display = 'none'; } });
+$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; filPt = null; $('dimbox').style.display = 'none'; } });
 const ctxm = $('ctxm');
 const endTool = (exitTool: boolean) => { polyPts = []; segPts = []; drag = null; if (exitTool) { tool = 'none'; refreshButtons(); } ctxm.style.display = 'none'; draw(); };
 sk.addEventListener('contextmenu', (e) => { e.preventDefault(); if (mode !== 'sketch') return; const r = $('gfx').getBoundingClientRect(); ctxm.style.left = e.clientX - r.left + 'px'; ctxm.style.top = e.clientY - r.top + 'px'; ctxm.style.display = 'block'; });
@@ -390,7 +413,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
