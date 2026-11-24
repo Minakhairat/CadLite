@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
 import { solveSketch, Con, L } from './solver';
-import { computeBodies, stepOf, Body as KBody } from './kernel';
+import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
@@ -538,3 +538,5 @@ sk.addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch' || !tp
   if (tpts.size >= 2 && pinch) { const n = tinfo(); cam.x -= ((n.mx - pinch.mx) * devicePixelRatio) / cam.s; cam.y += ((n.my - pinch.my) * devicePixelRatio) / cam.s; cam.s = Math.min(80, Math.max(1, cam.s * (n.d / pinch.d))); pinch = n; draw(); e.stopImmediatePropagation(); } else if (pinch) e.stopImmediatePropagation(); }, true);
 const tend = (e: PointerEvent) => { if (e.pointerType !== 'touch') return; if (held && held.id === e.pointerId) release(); const was = pinch; tpts.delete(e.pointerId); if (tpts.size < 2) pinch = tpts.size ? pinch : null; if (was) e.stopImmediatePropagation(); if (!tpts.size) pinch = null; };
 sk.addEventListener('pointerup', tend, true); sk.addEventListener('pointercancel', tend, true);
+// Warm the 3D kernel once the page is idle (not on data saver) so the app also works offline later.
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && !location.hostname.match(/^(localhost|127\.)/)) addEventListener('load', () => setTimeout(() => { const c = (navigator as any).connection; if (navigator.onLine && !(c && c.saveData)) loadKernel().catch(() => {}); }, 5000));
