@@ -31,4 +31,4 @@ Icons are original (`assets/icon.svg`).
 
 ## Limits
 
-v0.1: sketch (rectangle, circle, polygon), extrude, revolve, edit, STL export. No join/cut. Overlap checks use bounding boxes (conservative): overlapping bodies are rejected, and STL export is blocked when loaded features overlap. Not feature-equivalent to any commercial CAD.
+v0.1: sketch (rectangle, circle, polygon), extrude, revolve, edit, export to STL, OBJ, STEP (exact B-rep: planes, cylinders, cones) and DXF (2D sketch). STEP of a revolved circle profile is not supported yet. No join/cut. Overlap checks use bounding boxes (conservative): overlapping bodies are rejected, and all 3D exports are blocked when loaded features overlap. Not feature-equivalent to any commercial CAD.
