@@ -4,12 +4,13 @@ export type P = { x: number; y: number };
 /** The editable form of a sketch (lines, arcs, constraints, dimensions) kept next to the finished profile so it can be edited again. */
 export type SketchSrc = { ents: Entity[]; cons: { k: string; l: number; m?: number; v?: number }[]; dims: { e: number; w: string; pos: P }[] };
 export type Seg = { a: P; b: P; m?: P }; // straight segment, or arc a -> m -> b
-export type Entity =
+export type Entity = (
   | { t: 'rect'; a: P; b: P }
   | { t: 'circle'; c: P; r: number }
   | { t: 'poly'; pts: P[]; segs?: Seg[] }
   | { t: 'line'; a: P; b: P }
-  | { t: 'arc'; a: P; b: P; m: P }; // arc: start a, end b, passing through m
+  | { t: 'arc'; a: P; b: P; m: P } // arc: start a, end b, passing through m
+) & { cn?: boolean }; // cn: construction shape, drawn dashed, never part of the profile
 export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym'; plane?: 'XY' | 'XZ' | 'YZ' };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
