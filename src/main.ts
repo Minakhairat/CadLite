@@ -30,6 +30,13 @@ let sketch: Entity[] = [];
 let winA: P | null = null, winB: P | null = null, winPx = { x: 0, y: 0 }; // window-select box (world corners, start pixel)
 let selE: Entity[] = []; let hist: string[] = []; let redoS: string[] = []; let restoring = false;
 type PlaneId = 'XY' | 'XZ' | 'YZ';
+/** Where the sketch X, Y and normal point in world axes for a plane and orientation (same mapping as the kernel). */
+function sketchAxesWorld(plane: PlaneId, o: { r?: number; f?: boolean }) {
+  const rot = (v: number[]) => { let [x, y, z] = v; for (let i = 0; i < (o.r ?? 0); i++) [x, y] = [-y, x]; if (o.f) { y = -y; z = -z; } return [x, y, z]; };
+  const map = (v: number[]) => (plane === 'XZ' ? [v[0], -v[2], v[1]] : plane === 'YZ' ? [v[2], v[0], v[1]] : v);
+  const nm = (v: number[]) => { const i = v.findIndex((c) => Math.abs(c) > 0.5); return (v[i] > 0 ? '+' : '-') + 'XYZ'[i]; };
+  return { x: nm(map(rot([1, 0, 0]))), y: nm(map(rot([0, 1, 0]))), n: nm(map(rot([0, 0, 1]))) };
+}
 type OrientV = { r?: 0 | 1 | 2 | 3; f?: boolean };
 let curOrient: OrientV = {}; // sketch axis orientation of the current sketch
 let curPlane: PlaneId = 'XY'; // plane of the sketch being drawn, edited or waiting for a feature
@@ -121,7 +128,7 @@ function draw() {
   const o = toScreen({ x: 0, y: 0 }); ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#d33'; ctx.beginPath(); ctx.moveTo(0, o.y); ctx.lineTo(sk.width, o.y); ctx.stroke();
   ctx.strokeStyle = '#2a2'; ctx.beginPath(); ctx.moveTo(o.x, 0); ctx.lineTo(o.x, sk.height); ctx.stroke();
-  ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; ctx.fillText(curPlane === 'YZ' ? 'Y' : 'X', sk.width - 16 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText(curPlane === 'XY' ? 'Y' : 'Z', o.x + 5 * dpr, 14 * dpr);
+  ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; const ax = sketchAxesWorld(curPlane, curOrient); ctx.fillText('X (' + ax.x + ')', sk.width - 70 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y (' + ax.y + ')', o.x + 5 * dpr, 14 * dpr); ctx.fillStyle = '#34506f'; ctx.fillText(`${curPlane} plane, normal ${ax.n}`, 8 * dpr, sk.height - 8 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
   for (const e of all) { ctx.setLineDash(e.cn ? [8 * dpr, 5 * dpr] : []); ctx.strokeStyle = selE.includes(e) ? '#e8590c' : e.cn ? '#7a8794' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
