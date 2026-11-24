@@ -6,7 +6,7 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity } from './sketch-ops';
+import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity } from './sketch-ops';
 import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -450,7 +450,7 @@ function distTo(e: Entity, p: P): number {
 }
 /** Window select: left to right takes shapes fully inside the box, right to left (dashed green) takes any shape the box touches. */
 function windowSelect(a: P, b: P, add: boolean) {
-  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y); const crossing = b.x < a.x;
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y); const crossing = b.x < a.x; lastWin = { x0, y0, x1, y1 };
   const inside = (q: P) => q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1;
   const segHit = (p: P, q: P) => { let t0 = 0, t1 = 1; const dx = q.x - p.x, dy = q.y - p.y; for (const [pp, qq] of [[-dx, p.x - x0], [dx, x1 - p.x], [-dy, p.y - y0], [dy, y1 - p.y]]) { if (pp === 0) { if (qq < 0) return false; } else { const t = qq / pp; if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; } } } return true; };
   const hit = (e: Entity) => { const pts = outline(e); if (!crossing) return pts.every(inside); const closed = !(e.t === 'line' || e.t === 'arc'); for (let i = 0; i < pts.length - (closed ? 0 : 1); i++) if (segHit(pts[i], pts[(i + 1) % pts.length])) return true; return pts.some(inside); };
@@ -466,19 +466,21 @@ const usedByCon = (e: Entity) => cons.some((c) => c.l === (e as unknown) || c.m 
 function toggleConstruction() { if (!selE.length) { msg('Select shapes first (Select tool), then press Construction.'); return; } const to = !selE.every((e) => e.cn); for (const e of selE) { if (to) e.cn = true; else delete e.cn; } ck(); props(); draw(); msg(to ? `${selE.length} shape(s) are now construction (dashed, not part of the profile).` : `${selE.length} shape(s) are normal again.`); }
 const xconEl = document.getElementById('xcon'); if (xconEl) xconEl.onclick = toggleConstruction;
 function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).`); }
-type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off' | 'scale';
+type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off' | 'scale' | 'stretch';
+let lastWin = { x0: 0, y0: 0, x1: 10, y1: 10 };
 let xop: XOp = 'move';
 const xf = (id: string) => parseFloat((document.getElementById(id) as HTMLInputElement).value);
 function xOpen(op: XOp) {
   if (mode !== 'sketch') return;
   if (!selE.length) { tool = 'select'; refreshButtons(); msg('Select the shapes first: click them with the Select tool (Ctrl+click adds), then press the command again.'); return; }
   xop = op; const L = (t: string, id: string, v: string) => `<label>${t}<input id="${id}" type="number" step="any" value="${v}"/></label>`;
-  const T = { move: 'Move', copy: 'Copy', rot: 'Rotate', mir: 'Mirror', off: 'Offset', scale: 'Scale' }[op]; $('xt').textContent = `${T} (${selE.length} selected)`;
+  const T = { move: 'Move', copy: 'Copy', rot: 'Rotate', mir: 'Mirror', off: 'Offset', scale: 'Scale', stretch: 'Stretch' }[op]; $('xt').textContent = `${T} (${selE.length} selected)`;
   const keep = (on: boolean) => `<label style="display:flex;gap:6px;align-items:center"><input id="xkeep" type="checkbox" style="width:auto" ${on ? 'checked' : ''}/>Keep the original</label>`;
   $('xin').innerHTML = op === 'move' ? L('X distance (mm)', 'xa', '0') + L('Y distance (mm)', 'xb', '0')
     : op === 'copy' ? L('X offset (mm)', 'xa', '10') + L('Y offset (mm)', 'xb', '0') + L('Number of copies', 'xn', '1')
     : op === 'rot' ? L('Angle (deg, counter-clockwise)', 'xa', '90') + L('Centre X (mm)', 'xb', '0') + L('Centre Y (mm)', 'xc', '0') + keep(false)
     : op === 'mir' ? `<label>Axis<select id="xax"><option value="y">Y axis (x = 0)</option><option value="x">X axis (y = 0)</option><option value="c">Line through two points</option></select></label>` + L('Point 1 X', 'xa', '0') + L('Point 1 Y', 'xb', '0') + L('Point 2 X', 'xc', '0') + L('Point 2 Y', 'xd', '10') + keep(true)
+    : op === 'stretch' ? L('Window corner 1 X (mm)', 'xa', String(lastWin.x0)) + L('Window corner 1 Y (mm)', 'xb', String(lastWin.y0)) + L('Window corner 2 X (mm)', 'xc', String(lastWin.x1)) + L('Window corner 2 Y (mm)', 'xd', String(lastWin.y1)) + L('Move X (mm)', 'xe', '5') + L('Move Y (mm)', 'xf2', '0')
     : op === 'scale' ? L('Scale factor (greater than 0)', 'xa', '2') + L('Base point X (mm)', 'xb', '0') + L('Base point Y (mm)', 'xc', '0') + keep(false)
     : L('Distance (mm). Positive = outward / left of the line', 'xa', '5');
   $('xdlg').classList.add('show');
@@ -486,6 +488,14 @@ function xOpen(op: XOp) {
 function xApply() {
   const sel0 = [...selE]; let out: Entity[] = []; let keepOrig = false; const bad = (m: string) => { msg(m); };
   try {
+    if (xop === 'stretch') {
+      const v = ['xa', 'xb', 'xc', 'xd', 'xe', 'xf2'].map(xf); if (!v.every(Number.isFinite)) return bad('Enter numbers.');
+      const W = { x0: v[0], y0: v[1], x1: v[2], y1: v[3] }; const res = sel0.map((e) => stretchEntity(e, W, v[4], v[5]));
+      if (res.some((r) => !r)) return bad('Stretch: the window cuts through an arc, which is not supported yet. Move the window so it holds both ends of the arc or neither. Nothing changed.');
+      const chg = sel0.map((e, i) => (res[i] !== e ? i : -1)).filter((i) => i >= 0); if (!chg.length) return bad('Stretch: no point of the selected shapes is inside the window. Nothing changed.');
+      if (chg.some((i) => usedByCon(sel0[i]))) return bad('A shape to stretch has constraints or dimensions, so it cannot be changed in place. Remove them first. Nothing changed.');
+      const outs = chg.map((i) => res[i] as Entity); sketch = sketch.filter((e) => !chg.some((i) => sel0[i] === e)); sketch.push(...outs); selE = outs; $('xdlg').classList.remove('show'); props(); draw(); msg(`Stretched ${outs.length} shape(s).`); return;
+    }
     if (xop === 'move') { const a = xf('xa'), b = xf('xb'); if (![a, b].every(Number.isFinite)) return bad('Enter numbers.'); out = sel0.map((e) => transformEntity(e, moveTf(a, b))); }
     else if (xop === 'copy') { const a = xf('xa'), b = xf('xb'), n = Math.round(xf('xn')); if (![a, b].every(Number.isFinite) || !(n >= 1 && n <= 200)) return bad('Enter numbers (copies 1 to 200).'); keepOrig = true; for (let k = 1; k <= n; k++) out.push(...sel0.map((e) => transformEntity(e, moveTf(a * k, b * k)))); }
     else if (xop === 'rot') { const a = xf('xa'), cx = xf('xb'), cy = xf('xc'); if (![a, cx, cy].every(Number.isFinite)) return bad('Enter numbers.'); keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked; out = sel0.map((e) => transformEntity(e, rotateTf({ x: cx, y: cy }, a))); }
@@ -498,9 +508,9 @@ function xApply() {
     } else { const d = xf('xa'); if (!Number.isFinite(d) || d === 0) return bad('Enter a distance other than 0.'); keepOrig = true; const r = sel0.map((e) => offsetEntity(e, d)); const fail = r.findIndex((x) => !x); if (fail >= 0) return bad(`Offset is not possible for ${sel0[fail].t === 'poly' ? 'a polygon (not supported yet)' : 'this shape at that distance'}. Nothing changed.`); out = r as Entity[]; }
   } catch (er) { return bad((er as Error).message); }
   if (!keepOrig) { const locked = sel0.find(usedByCon); if (locked) return bad('A selected shape has constraints or dimensions, so it cannot be moved in place. Use Copy or Keep the original, or remove them. Nothing changed.'); sketch = sketch.filter((e) => !sel0.includes(e)); }
-  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset', scale: 'Scaled' }[xop]} ${sel0.length} shape(s).`);
+  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset', scale: 'Scaled', stretch: 'Stretched' }[xop]} ${sel0.length} shape(s).`);
 }
-$('xmove').onclick = () => xOpen('move'); $('xcopy').onclick = () => xOpen('copy'); $('xrot').onclick = () => xOpen('rot'); $('xmir').onclick = () => xOpen('mir'); $('xoff').onclick = () => xOpen('off'); const xscEl = document.getElementById('xsc'); if (xscEl) xscEl.onclick = () => xOpen('scale');
+$('xmove').onclick = () => xOpen('move'); $('xcopy').onclick = () => xOpen('copy'); $('xrot').onclick = () => xOpen('rot'); $('xmir').onclick = () => xOpen('mir'); $('xoff').onclick = () => xOpen('off'); const xscEl = document.getElementById('xsc'); if (xscEl) xscEl.onclick = () => xOpen('scale'); const xstEl = document.getElementById('xst'); if (xstEl) xstEl.onclick = () => xOpen('stretch');
 $('xdel').onclick = deleteSel; $('xundo').onclick = undoSk; $('xredo').onclick = redoSk; $('xok').onclick = xApply; $('xcancel').onclick = () => $('xdlg').classList.remove('show');
 addEventListener('keydown', (e) => {
   const t = (e.target as HTMLElement).tagName; if (t === 'INPUT' || t === 'SELECT' || mode !== 'sketch') return;
