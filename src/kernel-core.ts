@@ -5,7 +5,8 @@ import { Entity, outline, inside } from './geometry';
 export type Op = 'new' | 'join' | 'cut' | 'intersect';
 export type Dir = 'normal' | 'flip' | 'sym';
 export type Edges = 'all' | 'vertical' | 'top' | 'bottom';
-export type Spec = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
+export type Plane = 'XY' | 'XZ' | 'YZ';
+export type Spec = { plane?: Plane; kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
 type R = typeof Replicad;
 
 const valid = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.t === 'poly');
@@ -47,6 +48,8 @@ export function revolveSolid(R: R, sketch: Entity[]): Replicad.Shape3D {
   return sk.sketchOnPlane('XZ').revolve([0, 0, 1]) as Replicad.Shape3D;
 }
 
+/** Move a solid built in sketch space (x,y in the plane, z along the extrusion) onto its sketch plane. XY: unchanged. XZ: sketch x to X, sketch y to Z, extrusion to -Y. YZ: sketch x to Y, sketch y to Z, extrusion to +X (a cyclic permutation: 120 degrees about (1,1,1)). */
+export function toPlane(s: Replicad.Shape3D, plane?: Plane): Replicad.Shape3D { return plane === 'XZ' ? (s as any).rotate(90, [0, 0, 0], [1, 0, 0]) : plane === 'YZ' ? (s as any).rotate(120, [0, 0, 0], [1, 1, 1]) : s; }
 const span = (depth: number, dir: Dir | undefined): [number, number] => (dir === 'flip' ? [-depth, depth] : dir === 'sym' ? [-depth / 2, depth] : [0, depth]);
 const bb = (s: Replicad.Shape3D) => s.boundingBox.bounds as [number[], number[]];
 const touches = (a: Replicad.Shape3D, b: Replicad.Shape3D, t = 1e-6) => { const A = bb(a), B = bb(b); return [0, 1, 2].every((k) => A[0][k] <= B[1][k] + t && B[0][k] <= A[1][k] + t); };
@@ -74,9 +77,9 @@ export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
       bodies = bodies.map((b) => modify(b, f, nm));
       return;
     }
-    if (f.kind === 'revolve') { if ((f.op ?? 'new') !== 'new') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.'); bodies.push(revolveSolid(R, f.sketch)); return; }
+    if (f.kind === 'revolve') { if ((f.op ?? 'new') !== 'new') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.'); bodies.push(toPlane(revolveSolid(R, f.sketch), f.plane)); return; }
     if (f.kind !== 'extrude') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.');
-    const [z0, h] = span(f.depth, f.dir); const s = extrudeSolid(R, f.sketch, h, z0); const op = f.op ?? 'new'; const n = `Feature ${i + 1}`;
+    const [z0, h] = span(f.depth, f.dir); const s = toPlane(extrudeSolid(R, f.sketch, h, z0), f.plane); const op = f.op ?? 'new'; const n = `Feature ${i + 1}`;
     if (op === 'new') { bodies.push(s); return; }
     if (!bodies.length) throw new Error(`${n}: ${op === 'join' ? 'Join' : op === 'cut' ? 'Cut' : 'Intersect'} needs an existing solid. Create a New Solid first.`);
     if (op === 'join') {
