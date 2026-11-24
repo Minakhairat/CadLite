@@ -16,8 +16,8 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
-let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
 let filPt: P | null = null; let filR = 2;
@@ -70,12 +70,15 @@ function applyArcRels() {
 let dofVal: number | null = null, dofSeq = 0;
 function refreshDof() { const ls = sketch.filter((e) => e.t === 'line') as L[]; const n = ++dofSeq; if (!ls.length) { if (dofVal !== null) { dofVal = null; draw(); } return; }
   dofSketch(ls, cons.filter((c) => LINE_KINDS.includes(c.k))).then((d) => d >= 0 ? d : null, () => null).then((d) => { if (n !== dofSeq) return; if (d !== dofVal) { dofVal = d; draw(); } }); }
-async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); }
+/** Persistent Point-on-end relation (kind 'pcoin'): the Point marker follows the chosen end point of a line, re-applied after every solve. */
+function applyPointRels() {
+  for (const c of cons) { if ((c.k as string) !== 'pcoin') continue; const pe = c.l as unknown as PointE, ln = c.m as unknown as { a: P; b: P }; if (!sketch.includes(pe as unknown as Entity) || !sketch.includes(ln as unknown as Entity)) continue; const q = (c.v ?? 0) ? ln.b : ln.a; pe.p = { x: q.x, y: q.y }; } }
+async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); applyPointRels(); }
 async function solveAll0(lines: L[], all: Con[]): Promise<void> {
   await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
   const ac = all.filter((c) => (c.k as string) === 'tanla');
   if (ac.length) { const arcs = sketch.filter((e) => e.t === 'arc') as unknown as { a: P; b: P; m: P }[]; solveArcs((await getW()) as never, lines, arcs, ac.map((c) => ({ k: 'tanla' as const, arc: c.l as never, l: c.m as never })) as never); }
-  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr'); if (!cc.length) return;
+  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr' && (c.k as string) !== 'pcoin'); if (!cc.length) return;
   const circles = sketch.filter((e) => e.t === 'circle') as unknown as { c: P; r: number }[];
   await solveCircleSketch(lines, circles, cc.map((c) => ({ k: c.k as 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad', ...(c.v !== undefined ? { v: c.v } : {}), c: (c.k === 'tanlc' ? c.l : c.l) as never, ...(c.k === 'tanlc' ? { l: c.m } : c.m ? { d: c.m as never } : {}) })) as never);
 }
@@ -156,14 +159,17 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)) && (!c.n || sketch.includes(c.n as Entity)));
-  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if ((c.k as string) === 'pcoin') { const s = toScreen((c.l as unknown as PointE).p); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(s.x, s.y, 7 * dpr, 0, 7); ctx.stroke(); continue; } if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
   if (c && drag) { ctx.fillStyle = '#123'; ctx.font = `${13 * dpr}px sans-serif`; const s = toScreen(drag.cur); ctx.fillText(c.t === 'rect' ? `${Math.abs(c.b.x - c.a.x)} x ${Math.abs(c.b.y - c.a.y)} mm` : c.t === 'circle' ? `R ${c.r.toFixed(1)} mm` : '', s.x + 12, s.y - 12); }
 }
 function ptRaw(e: PointerEvent): P { const r = sk.getBoundingClientRect(); return toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); }
-function pt(e: PointerEvent): P { const r = sk.getBoundingClientRect(); const w = toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); const g = grid(); return { x: snap(w.x, g), y: snap(w.y, g) }; }
+function pt(e: PointerEvent): P { const r = sk.getBoundingClientRect(); const w = toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); const g = grid(); const tg = snapTarget(w); if (tg) return tg; return { x: snap(w.x, g), y: snap(w.y, g) }; }
+/** Snap to a Point marker, a line end point or a circle centre when the pointer is within 10 px of one. Points win over the others. */
+function snapTarget(w: P): P | null { const lim = (10 * devicePixelRatio) / cam.s; let best: P | null = null, bd = lim; const tryP = (q: P, bonus = 0) => { const d = Math.hypot(q.x - w.x, q.y - w.y) - bonus; if (d < bd) { bd = d; best = { x: q.x, y: q.y }; } };
+  for (const e of sketch) { if (isPt(e)) tryP((e as PointE).p, lim * 0.5); else if (e.t === 'line') { tryP(e.a); tryP(e.b); } else if (e.t === 'circle') tryP(e.c); } return best; }
 let pan: { x: number; y: number } | null = null;
 sk.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return; // right click opens the Inventor-style OK / Cancel menu
@@ -227,6 +233,16 @@ sk.addEventListener('pointerdown', (e) => {
     const c: Con = { k: 'coin', l: conEnd.l, m: best.l, v: (conEnd.e << 1) | best.e }; conEnd = null; cons.push(c); msg('Solving...');
     solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
+  }
+  if (tool === 'cpt') {
+    if (!ptPick || !sketch.includes(ptPick as unknown as Entity)) { ptPick = null; let bp: PointE | null = null, bd = (10 * devicePixelRatio) / cam.s; for (const e of sketch) if (isPt(e)) { const d = Math.hypot((e as PointE).p.x - pr.x, (e as PointE).p.y - pr.y); if (d < bd) { bd = d; bp = e as PointE; } }
+      if (!bp) { msg('Point on end: click a Point marker first.'); return; }
+      if (cons.some((x) => (x.k as string) === 'pcoin' && (x.l as unknown) === bp)) { msg('This Point is already attached to a line end.'); return; }
+      ptPick = bp; msg('Now click the line end point the Point should follow.'); return; }
+    let best: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null, bd2 = (10 * devicePixelRatio) / cam.s;
+    for (const e of sketch) if (e.t === 'line') for (const k of [0, 1]) { const q = k ? e.b : e.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd2) { bd2 = d; best = { l: e, e: k }; } }
+    if (!best) { msg('Click near a line end point.'); return; }
+    const c: Con = { k: 'pcoin' as Con['k'], l: ptPick as unknown as L, m: best.l as unknown as L, v: best.e }; ptPick = null; cons.push(c); applyPointRels(); ck(); msg('Point attached: it now follows that line end (one-way: the line does not follow the Point).'); props(); draw(); return;
   }
   if (tool === 'csym') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
@@ -330,7 +346,7 @@ type Extrude_L = Extract<Entity, { t: 'line' }>;
 const commitDim = () => {
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
-  try { dimApply(t.e, t.w, parseFloat(inp.value)); try { applyArcRels(); } catch (er2) { msg((er2 as Error).message); }
+  try { dimApply(t.e, t.w, parseFloat(inp.value)); try { applyArcRels(); applyPointRels(); } catch (er2) { msg((er2 as Error).message); }
     if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: parseFloat(inp.value) }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
   catch (er) { msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
@@ -452,7 +468,7 @@ function tree() {
 function numField(label: string, v: number, on: (n: number) => void) {
   const l = document.createElement('label'); l.textContent = label;
   const i = document.createElement('input'); i.type = 'number'; i.step = 'any'; i.value = String(+v.toFixed(4));
-  i.onchange = () => { const n = parseFloat(i.value); if (isFinite(n)) { on(n); if (cons.some((c) => (c.k as string) === 'aconc' || (c.k as string) === 'aeqr')) { try { applyArcRels(); } catch (er) { msg((er as Error).message); } } draw(); } };
+  i.onchange = () => { const n = parseFloat(i.value); if (isFinite(n)) { on(n); try { applyPointRels(); } catch { /* ignore */ } if (cons.some((c) => (c.k as string) === 'aconc' || (c.k as string) === 'aeqr')) { try { applyArcRels(); } catch (er) { msg((er as Error).message); } } draw(); } };
   l.append(i); return l;
 }
 function props() {
@@ -693,7 +709,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; conPick = null; symPick = []; cirPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
