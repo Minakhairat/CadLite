@@ -29,3 +29,10 @@ const P = (x: number, y: number) => ({ x, y });
   near(a.b.y, 0, 1e-9, 'collinear: fixed line stays'); near(b.a.y, 0, 1e-6, 'collinear: second line start on the line'); near(b.b.y, 0, 1e-6, 'collinear: second line end on the line'); near(b.a.x, 12, 1e-6, 'collinear: start keeps its x'); }
 { const a: L = { a: P(0, 0), b: P(10, 0) }, b: L = { a: P(12, 3), b: P(20, 5) }; solveLines(w, [a, b], [{ k: 'col', l: a, m: b }]);
   const cr = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x); near(cr(a.a, a.b, b.a), 0, 1e-6, 'collinear free: start on the line through a'); near(cr(a.a, a.b, b.b), 0, 1e-6, 'collinear free: end on the line through a'); }
+// degrees of freedom of the line end points (hand: 4 free points = 8; Fix removes the 4 of one line; Horizontal 1; Length 1; Collinear 2)
+{ const mk = () => ({ a: { a: P(0, 0), b: P(10, 0) } as L, b: { a: P(12, 3), b: P(20, 5) } as L });
+  let { a, b } = mk(); near(solveLines(w, [a, b], []), 8, 0, 'dof: two free lines = 8');
+  ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }]), 4, 0, 'dof: one fixed = 4');
+  ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'h', l: b }]), 3, 0, 'dof: fixed + horizontal = 3');
+  ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'h', l: b }, { k: 'len', l: b, v: 8 }]), 2, 0, 'dof: fixed + horizontal + length = 2');
+  ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'col', l: a, m: b }]), 2, 0, 'dof: fixed + collinear = 2'); }
