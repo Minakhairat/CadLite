@@ -18,7 +18,7 @@ One TypeScript codebase: website, desktop (Tauri) and iOS/Android (Capacitor).
 Push to `main`; in repo Settings > Pages choose "GitHub Actions". The workflow in `.github/workflows/pages.yml` deploys.
 
 ## Desktop (Tauri, needs Rust)
-    npm run desktop:build
+    npm run icons && npm run desktop:build  # icons are generated from assets/icon.svg
 
 ## Mobile (Capacitor)
     npx cap add android && npx cap add ios   # iOS needs a Mac with Xcode
