@@ -163,3 +163,22 @@ export function filletCorner(p: P, a: P, b: P, r: number): { t1: P; t2: P; arc: 
   const t1 = { x: p.x + u.x * t, y: p.y + u.y * t }, t2 = { x: p.x + v.x * t, y: p.y + v.y * t };
   return { t1, t2, arc: { a: t1, b: t2, m: { x: c.x - bis.x * r, y: c.y - bis.y * r } } };
 }
+
+/** Trim a line at the crossings with other lines: removes the piece under the click between its two nearest crossings
+ * (or the end). Returns the lines that replace it. No crossing at all removes the whole line. */
+export function trimLine(l: { a: P; b: P }, others: { a: P; b: P }[], click: P): { a: P; b: P }[] {
+  const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, L2 = dx * dx + dy * dy; if (L2 < 1e-18) throw new Error('Zero-length line.');
+  const tc = Math.max(0, Math.min(1, ((click.x - l.a.x) * dx + (click.y - l.a.y) * dy) / L2));
+  const ts: number[] = [];
+  for (const o of others) {
+    const ex = o.b.x - o.a.x, ey = o.b.y - o.a.y, den = dx * ey - dy * ex; if (Math.abs(den) < 1e-12) continue;
+    const t = ((o.a.x - l.a.x) * ey - (o.a.y - l.a.y) * ex) / den, s = ((o.a.x - l.a.x) * dy - (o.a.y - l.a.y) * dx) / den;
+    if (t > 1e-9 && t < 1 - 1e-9 && s >= -1e-9 && s <= 1 + 1e-9) ts.push(t);
+  }
+  const lo = Math.max(0, ...ts.filter((t) => t <= tc)), hi = Math.min(1, ...ts.filter((t) => t >= tc), 1);
+  const at = (t: number): P => ({ x: l.a.x + dx * t, y: l.a.y + dy * t });
+  const out: { a: P; b: P }[] = [];
+  if (lo > 1e-9) out.push({ a: l.a, b: at(lo) });
+  if (hi < 1 - 1e-9) out.push({ a: at(hi), b: l.b });
+  return out;
+}
