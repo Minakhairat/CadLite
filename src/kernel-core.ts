@@ -18,7 +18,11 @@ export function extrudeSolid(R: R, sketch: Entity[], h: number, z0: number): Rep
   const make = (e: Entity): Replicad.Shape3D => {
     if (e.t === 'rect') return R.makeBox([Math.min(e.a.x, e.b.x), Math.min(e.a.y, e.b.y), z0], [Math.max(e.a.x, e.b.x), Math.max(e.a.y, e.b.y), z0 + h]);
     if (e.t === 'circle') return R.makeCylinder(e.r, h, [e.c.x, e.c.y, z0], [0, 0, 1]);
-    const pts = outline(e); let d = R.draw([pts[0].x, pts[0].y]); for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i].x, pts[i].y]);
+    let d: any;
+    if (e.t === 'poly' && e.segs?.length) { // true arcs: keep arc edges exact
+      d = R.draw([e.segs[0].a.x, e.segs[0].a.y]);
+      for (const g of e.segs) d = g.m ? d.threePointsArcTo([g.b.x, g.b.y], [g.m.x, g.m.y]) : d.lineTo([g.b.x, g.b.y]);
+    } else { const pts = outline(e); d = R.draw([pts[0].x, pts[0].y]); for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i].x, pts[i].y]); }
     return d.close().sketchOnPlane('XY', z0).extrude(h) as Replicad.Shape3D;
   };
   let solid: Replicad.Shape3D | null = null;
