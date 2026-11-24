@@ -134,9 +134,9 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
   <div id="dlg"><h5><span id="dlgt">Extrude</span> <span class="crumb">&rsaquo; Sketch</span></h5>
 <div class="sec">Input Geometry</div><div class="in"><div class="kv"><span>Profiles</span><b>finished sketch</b></div></div>
 <div class="sec">Behavior</div><div class="in"><label>Distance A (mm)<input id="depth" type="number" value="20" min="0.01" step="any"/></label>
-<div class="bool pendrow"><span>Direction</span><button disabled class="pend" title="Flip / Symmetric / Asymmetric: In development (قيد التطوير)">Flip</button><button disabled class="pend" title="In development (قيد التطوير)">Symmetric</button><button disabled class="pend" title="In development (قيد التطوير)">Asymmetric</button></div>
+<div class="bool"><span>Direction</span><button data-dir="flip" title="Flip: extrude toward -Z">Flip</button><button data-dir="sym" title="Symmetric: half the distance each side of the sketch plane">Symmetric</button><button disabled class="pend" title="Asymmetric: In development (قيد التطوير)">Asymmetric</button></div>
 <div id="dlgmsg" style="color:#555"></div></div>
-<div class="sec">Output</div><div class="in"><div class="bool"><span>Boolean</span><button class="on" disabled title="New solid body: available">New Solid</button><button disabled class="pend" title="Join: In development (قيد التطوير)">Join</button><button disabled class="pend" title="Cut: In development (قيد التطوير)">Cut</button><button disabled class="pend" title="Intersect: In development (قيد التطوير)">Intersect</button></div></div>
+<div class="sec">Output</div><div class="in"><div class="bool"><span>Boolean</span><button data-op="new" class="on">New Solid</button><button data-op="join" title="Join: add to the existing solid">Join</button><button data-op="cut" title="Cut: remove from the existing solid">Cut</button><button data-op="intersect" title="Intersect: keep only the overlap">Intersect</button></div></div>
 <div class="sec">Advanced Properties</div>
 <div class="ok"><button id="dok">OK</button><button id="dcancel">Cancel</button></div></div>
  </div>
