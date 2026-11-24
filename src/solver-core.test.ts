@@ -24,3 +24,8 @@ const P = (x: number, y: number) => ({ x, y });
 { const a: L = { a: P(0, 0), b: P(10, 0) }, b: L = { a: P(12, 3), b: P(20, 10) }; solveLines(w, [a, b], [{ k: 'coin', l: a, m: b, v: 2 }]); near(a.b.x, b.a.x, 1e-6, 'coincident x'); near(a.b.y, b.a.y, 1e-6, 'coincident y'); near(Math.hypot(b.b.x - b.a.x, b.b.y - b.a.y) > 1 ? 1 : 0, 1, 0, 'second line not collapsed'); }
 // 9) Coincident with Fix: the fixed line stays, the other end moves onto it
 { const a: L = { a: P(0, 0), b: P(10, 0) }, b: L = { a: P(12, 3), b: P(20, 10) }; solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'coin', l: a, m: b, v: 2 }]); near(a.b.x, 10, 1e-9, 'fixed end stays x'); near(b.a.x, 10, 1e-6, 'moved onto fixed end x'); near(b.a.y, 0, 1e-6, 'moved onto fixed end y'); }
+// Collinear: both end points of the second line lie on the infinite line through the first
+{ const a: L = { a: P(0, 0), b: P(10, 0) }, b: L = { a: P(12, 3), b: P(20, 5) }; solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'col', l: a, m: b }]);
+  near(a.b.y, 0, 1e-9, 'collinear: fixed line stays'); near(b.a.y, 0, 1e-6, 'collinear: second line start on the line'); near(b.b.y, 0, 1e-6, 'collinear: second line end on the line'); near(b.a.x, 12, 1e-6, 'collinear: start keeps its x'); }
+{ const a: L = { a: P(0, 0), b: P(10, 0) }, b: L = { a: P(12, 3), b: P(20, 5) }; solveLines(w, [a, b], [{ k: 'col', l: a, m: b }]);
+  const cr = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x); near(cr(a.a, a.b, b.a), 0, 1e-6, 'collinear free: start on the line through a'); near(cr(a.a, a.b, b.b), 0, 1e-6, 'collinear free: end on the line through a'); }
