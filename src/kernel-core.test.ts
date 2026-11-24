@@ -47,3 +47,6 @@ let tH = false; try { buildBodies(R, [plate, H(100, 5, 0)]); } catch { tH = true
 near(V(buildBodies(R, [{ kind: 'revolve', sketch: [rect(5, 0, 10, 20)], depth: 0 }])), Math.PI * 75 * 20, 0.001, 'revolve tube (exact)');
 near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y: 0 }, r: 3 }], depth: 0 }])), 2 * Math.PI ** 2 * 10 * 9, 0.001, 'revolve torus (exact)');
 { let th = false; try { buildBodies(R, [{ kind: 'revolve', sketch: [rect(-2, 0, 4, 5)], depth: 0 }]); } catch { th = true; } if (!th) { console.error('FAIL revolve across the axis should be rejected'); process.exit(1); } console.log('ok revolve across the axis is rejected'); }
+// Sphere: a half disc (true arc plus a line on the axis) revolved about Z is a sphere, volume 4/3 pi r^3
+{ const r = 10, h = r * Math.SQRT1_2; const poly = { t: 'poly', pts: [{ x: 0, y: -r }, { x: h, y: -h }, { x: r, y: 0 }, { x: h, y: h }, { x: 0, y: r }], segs: [{ a: { x: 0, y: -r }, b: { x: 0, y: r }, m: { x: r, y: 0 } }, { a: { x: 0, y: r }, b: { x: 0, y: -r } }] } as any;
+  near(V(buildBodies(R, [{ kind: 'revolve', sketch: [poly], depth: 0 }])), (4 / 3) * Math.PI * 1000, 0.001, 'revolve half disc = sphere (exact)'); }
