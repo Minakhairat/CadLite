@@ -1,8 +1,8 @@
 // 2D geometric constraints on sketch lines, solved with planegcs (FreeCAD's solver). The wrapper is injected so Node tests and the browser share this code.
 import type { P } from './geometry';
 export type L = { a: P; b: P };
-export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len' | 'fix' | 'coin' | 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad' | 'tanla' | 'aconc' | 'aeqr'; l: L; m?: L; v?: number };
-export const LINE_KINDS: string[] = ['h', 'v', 'par', 'perp', 'eq', 'len', 'fix', 'coin'];
+export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len' | 'fix' | 'coin' | 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad' | 'tanla' | 'aconc' | 'aeqr' | 'col'; l: L; m?: L; v?: number };
+export const LINE_KINDS: string[] = ['h', 'v', 'par', 'perp', 'eq', 'len', 'fix', 'coin', 'col'];
 type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
 
 /** Solve the constraints over all lines. Shared end points (same coordinates) stay joined. Writes the solution back into the lines. Throws when the constraints cannot all be met. */
@@ -17,6 +17,7 @@ export function solveLines(w: W, lines: L[], cons: Con[], tol = 1e-6): void {
     const id = `c${n}`;
     if (c.k === 'coin') { const v = c.v ?? 0; const p1 = ends[i][v >> 1 & 1], p2 = ends[j][v & 1]; if (p1 !== p2) prims.push({ id, type: 'p2p_coincident', p1_id: `p${p1}`, p2_id: `p${p2}` }); return; } // v encodes which end of each line: bit1 = end of l, bit0 = end of m
     if (c.k === 'fix') { for (const q of ends[i]) prims[q].fixed = true; return; }
+    if (c.k === 'col') { prims.push({ id: `${id}a`, type: 'point_on_line_pl', p_id: `p${ends[j][0]}`, l_id: `l${i}` }, { id: `${id}b`, type: 'point_on_line_pl', p_id: `p${ends[j][1]}`, l_id: `l${i}` }); return; }
     if (c.k === 'len') prims.push({ id, type: 'p2p_distance', p1_id: `p${ends[i][0]}`, p2_id: `p${ends[i][1]}`, distance: c.v });
     else if (c.k === 'h') prims.push({ id, type: 'horizontal_l', l_id: `l${i}` });
     else if (c.k === 'v') prims.push({ id, type: 'vertical_l', l_id: `l${i}` });
