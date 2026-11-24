@@ -7,7 +7,7 @@ export type Entity =
   | { t: 'poly'; pts: P[] }
   | { t: 'line'; a: P; b: P }
   | { t: 'arc'; a: P; b: P; m: P }; // arc: start a, end b, passing through m
-export type Feature = { kind: 'extrude' | 'revolve'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry };
+export type Feature = { kind: 'extrude' | 'revolve'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym' };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
 
@@ -137,6 +137,9 @@ export function toSTL(geos: THREE.BufferGeometry[]): string {
   return s + 'endsolid cadlite\n';
 }
 
-export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number): THREE.BufferGeometry {
-  return kind === 'extrude' ? extrude(sketch, depth) : revolve(sketch);
+export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number, dir?: 'normal' | 'flip' | 'sym'): THREE.BufferGeometry {
+  if (kind !== 'extrude') return revolve(sketch);
+  const g = extrude(sketch, depth);
+  if (dir === 'flip') g.translate(0, 0, -depth); else if (dir === 'sym') g.translate(0, 0, -depth / 2);
+  return g;
 }
