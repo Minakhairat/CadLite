@@ -4,7 +4,8 @@ import { Entity, outline, inside } from './geometry';
 
 export type Op = 'new' | 'join' | 'cut' | 'intersect';
 export type Dir = 'normal' | 'flip' | 'sym';
-export type Spec = { kind: 'extrude' | 'revolve'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir };
+export type Edges = 'all' | 'vertical' | 'top' | 'bottom';
+export type Spec = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
 type R = typeof Replicad;
 
 const valid = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.t === 'poly');
@@ -37,8 +38,16 @@ const vol = (R: R, s: Replicad.Shape3D) => R.measureVolume(s);
 
 /** Apply features in order. Returns the resulting solid bodies. */
 export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
+  measure = (s) => R.measureVolume(s);
   let bodies: Replicad.Shape3D[] = [];
   feats.forEach((f, i) => {
+    if (f.kind === 'fillet' || f.kind === 'chamfer' || f.kind === 'shell') {
+      const nm = f.kind === 'fillet' ? 'Fillet' : f.kind === 'chamfer' ? 'Chamfer' : 'Shell';
+      if (!bodies.length) throw new Error(`Feature ${i + 1}: ${nm} needs an existing solid.`);
+      if (!(f.depth > 0)) throw new Error(`${nm}: the size must be greater than 0.`);
+      bodies = bodies.map((b) => modify(b, f, nm));
+      return;
+    }
     if (f.kind !== 'extrude') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.');
     const [z0, h] = span(f.depth, f.dir); const s = extrudeSolid(R, f.sketch, h, z0); const op = f.op ?? 'new'; const n = `Feature ${i + 1}`;
     if (op === 'new') { bodies.push(s); return; }
@@ -61,3 +70,19 @@ export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
   });
   return bodies;
 }
+
+let measure: (s: Replicad.Shape3D) => number = () => 0;
+const T = 1e-6;
+/** Fillet / chamfer / shell one body. Edge sets: all edges, vertical (Z) edges, or the edges on the top or bottom face plane. */
+function modify(b: Replicad.Shape3D, f: Spec, nm: string): Replicad.Shape3D {
+  const [lo, hi] = bb(b); const z = f.edges === 'bottom' ? lo[2] : hi[2]; const k = f.edges ?? 'all';
+  const sel = k === 'all' ? undefined : (e: any) => (k === 'vertical' ? e.inDirection('Z') : e.inPlane('XY', z));
+  const v0 = measure(b);
+  const out = (() => { try {
+    if (f.kind === 'shell') return (b as any).shell(f.depth, (fc: any) => fc.inPlane('XY', k === 'bottom' ? lo[2] : hi[2])) as Replicad.Shape3D;
+    return (f.kind === 'fillet' ? (b as any).fillet(f.depth, sel) : (b as any).chamfer(f.depth, sel)) as Replicad.Shape3D;
+  } catch (e) { throw new Error(`${nm} failed: the size is too large for this shape, or the selected edges do not exist.`); } })();
+  if (!(Math.abs(measure(out) - v0) > 1e-6)) throw new Error(`${nm} had no effect on this shape (the geometry kernel could not apply it here). Try different edges or size.`);
+  return out;
+}
+void T;
