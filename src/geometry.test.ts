@@ -9,7 +9,7 @@ import { buildGeometry } from './geometry';
 const f = { kind: 'extrude' as const, depth: 5, sketch: JSON.parse(JSON.stringify(box)) as Entity[] };
 const e0 = f.sketch[0] as Extract<Entity, { t: 'rect' }>; e0.b.x = 20; f.depth = 10; // edit dimensions: 20 x 20 x 10
 near(volume(buildGeometry(f.kind, f.sketch, f.depth)), 4000, 1e-6, 'edited feature volume');
-import { resolveLoops } from './geometry';
+import { resolveLoops, filletCorner, arcPoints, circle3 } from './geometry';
 const tri: Entity[] = [{ t: 'line', a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { t: 'line', a: { x: 0, y: 10 }, b: { x: 10, y: 0 } }, { t: 'line', a: { x: 0, y: 0 }, b: { x: 0, y: 10 } }];
 near(volume(extrude(resolveLoops(tri), 2)), 100, 1e-6, 'triangle from 3 lines (shuffled order and direction)');
 const dshape: Entity[] = [{ t: 'line', a: { x: -10, y: 0 }, b: { x: 10, y: 0 } }, { t: 'arc', a: { x: 10, y: 0 }, b: { x: -10, y: 0 }, m: { x: 0, y: 10 } }];
@@ -18,3 +18,15 @@ const lower: Entity[] = [{ t: 'line', a: { x: -10, y: 0 }, b: { x: 10, y: 0 } },
 near(volume(extrude(resolveLoops(lower), 1)), (Math.PI * 100) / 2, 0.5, 'arc through the lower side');
 let threw = false; try { resolveLoops(tri.slice(0, 2)); } catch { threw = true; }
 if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } console.log('ok open profile rejected');
+
+{ // 90 degree corner at the origin, r=2: tangent points at 2, arc centre (2,2), middle point on the circle nearest the corner
+  const f = filletCorner({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }, 2);
+  near(f.t1.x, 2, 1e-9, 'fillet tangent point 1 x'); near(f.t2.y, 2, 1e-9, 'fillet tangent point 2 y');
+  const k = circle3(f.arc.a, f.arc.b, f.arc.m)!; near(k.c.x, 2, 1e-9, 'fillet centre x'); near(k.c.y, 2, 1e-9, 'fillet centre y'); near(k.r, 2, 1e-9, 'fillet radius');
+  let big = false; try { filletCorner({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }, 20); } catch { big = true; } if (!big) { console.error('FAIL oversize'); process.exit(1); }
+  // closed square 10x10 with one corner rounded r=2: area = 100 - r^2(1 - pi/4)
+  const sq = [{ t: 'line', a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { t: 'line', a: { x: 10, y: 0 }, b: { x: 10, y: 10 } }, { t: 'line', a: { x: 10, y: 10 }, b: { x: 0, y: 10 } }, { t: 'line', a: { x: 0, y: 10 }, b: { x: 0, y: 0 } }] as any[];
+  const fc = filletCorner({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }, 2); sq[0].a = fc.t1; sq[3].b = fc.t2; sq.push({ t: 'arc', ...fc.arc });
+  near(volume(extrude(resolveLoops(sq), 1)), 100 - 4 * (1 - Math.PI / 4), 0.05, 'square with one rounded corner');
+  void arcPoints;
+}
