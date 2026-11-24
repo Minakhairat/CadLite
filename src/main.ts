@@ -30,6 +30,8 @@ let sketch: Entity[] = [];
 let winA: P | null = null, winB: P | null = null, winPx = { x: 0, y: 0 }; // window-select box (world corners, start pixel)
 let selE: Entity[] = []; let hist: string[] = []; let redoS: string[] = []; let restoring = false;
 type PlaneId = 'XY' | 'XZ' | 'YZ';
+type OrientV = { r?: 0 | 1 | 2 | 3; f?: boolean };
+let curOrient: OrientV = {}; // sketch axis orientation of the current sketch
 let curPlane: PlaneId = 'XY'; // plane of the sketch being drawn, edited or waiting for a feature
 let pending: Entity[] | null = null; // finished sketch not yet used by a feature
 let features: Feature[] = [];
@@ -293,10 +295,10 @@ const group = new THREE.Group(); scene.add(group);
 let shown: KBody[] | null = null; // kernel result (Join/Cut/Intersect); null = draw each feature
 const isMod = (k: string) => k === 'hole' || k === 'fillet' || k === 'chamfer' || k === 'shell';
 const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' || isMod(f.kind));
-const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any; plane?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir, f.plane));
-const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges, plane: isMod(f.kind) ? undefined : f.plane });
+const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any; plane?: any; orient?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir, f.plane, f.orient));
+const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges, plane: isMod(f.kind) ? undefined : f.plane, orient: isMod(f.kind) ? undefined : f.orient });
 /** Try a new feature list. Computes the solid when Join/Cut/Intersect is involved. Returns false (and a message) when it fails. */
-const mixedPlaneMsg = (fs: Feature[]) => (fs.some((f) => f.plane && f.plane !== 'XY') && fs.some((f) => isMod(f.kind)) ? 'Refused: Hole, Fillet, Chamfer and Shell are not verified on parts that have XZ or YZ features yet (they work in world axes). The model was not changed.' : '');
+const mixedPlaneMsg = (fs: Feature[]) => (fs.some((f) => (f.plane && f.plane !== 'XY') || f.orient?.r || f.orient?.f) && fs.some((f) => isMod(f.kind)) ? 'Refused: Hole, Fillet, Chamfer and Shell are not verified on parts that have XZ or YZ features yet (they work in world axes). The model was not changed.' : '');
 async function applyFeatures(next: Feature[]): Promise<boolean> {
   { const mm = mixedPlaneMsg(next); if (mm) { msg(mm); return false; } }
   let bodies: KBody[] | null = null;
@@ -497,13 +499,13 @@ function startSketch(from?: Entity[], src?: SketchSrc | null) { selE = []; hist 
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
   if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
-const pickPlane = (p: PlaneId) => { $('pp').classList.remove('show'); if (!pending) curPlane = p; startSketch(); };
+const pickPlane = (p: PlaneId) => { $('pp').classList.remove('show'); if (!pending) { curPlane = p; const ro = document.getElementById('pprot') as HTMLSelectElement | null, fl = document.getElementById('ppflip') as HTMLInputElement | null; curOrient = { r: ((ro ? parseInt(ro.value, 10) || 0 : 0) % 4) as 0 | 1 | 2 | 3, f: !!fl?.checked }; } startSketch(); };
 $('ppxy').onclick = () => pickPlane('XY');
 const ppxz = document.getElementById('ppxz'), ppyz = document.getElementById('ppyz');
 if (ppxz) ppxz.onclick = () => pickPlane('XZ');
 if (ppyz) ppyz.onclick = () => pickPlane('YZ');
 $('ppx').onclick = () => $('pp').classList.remove('show');
-function editFeature(i: number) { if (isMod(features[i].kind)) { editMod(i); return; } editing = i; sel = i; curPlane = features[i].plane ?? 'XY'; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
+function editFeature(i: number) { if (isMod(features[i].kind)) { editMod(i); return; } editing = i; sel = i; curPlane = features[i].plane ?? 'XY'; curOrient = features[i].orient ?? {}; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) { pending = null; pendingSrc = null; } editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
 $('clear').onclick = () => { cons = []; sketch = []; polyPts = []; draw(); props(); };
@@ -540,7 +542,7 @@ $('dok').onclick = async () => {
     const depth = parseFloat(($('depth') as HTMLInputElement).value);
     if (dlgKind === 'extrude' && !(depth > 0)) throw new Error('Distance must be greater than 0');
     const op = dlgKind === 'extrude' ? dlgOp : 'new'; const dir = dlgKind === 'extrude' ? dlgDir : 'normal';
-    const geo = buildGeometry(dlgKind, pending, depth || 1, dir, curPlane); const f: Feature = { kind: dlgKind, depth: depth || 1, sketch: clone(pending), geo, op, dir, ...(curPlane !== 'XY' ? { plane: curPlane } : {}), ...(pendingSrc ? { src: pendingSrc } : {}) };
+    const geo = buildGeometry(dlgKind, pending, depth || 1, dir, curPlane, curOrient); const f: Feature = { kind: dlgKind, depth: depth || 1, sketch: clone(pending), geo, op, dir, ...(curPlane !== 'XY' ? { plane: curPlane } : {}), ...(curOrient.r || curOrient.f ? { orient: { ...curOrient } } : {}), ...(pendingSrc ? { src: pendingSrc } : {}) };
     const next = editing !== null ? features.map((o, i) => (i === editing ? f : o)) : [...features, f];
     if (!needsKernel(next)) {
       const nb = bbox(f.kind, geo).expandByScalar(-1e-6);
@@ -615,7 +617,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
 // ---------- save / open / export ----------
-const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}), ...(f.plane && f.plane !== 'XY' ? { plane: f.plane } : {}) })), sketch: pending ?? [], ...(pending && curPlane !== 'XY' ? { pendingPlane: curPlane } : {}), ...(pending && pendingSrc ? { pendingSrc } : {}), ...(matIdx ? { mat: matName() } : {}) });
+const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}), ...(f.plane && f.plane !== 'XY' ? { plane: f.plane } : {}), ...(f.orient && (f.orient.r || f.orient.f) ? { orient: f.orient } : {}) })), sketch: pending ?? [], ...(pending && curPlane !== 'XY' ? { pendingPlane: curPlane } : {}), ...(pending && (curOrient.r || curOrient.f) ? { pendingOrient: curOrient } : {}), ...(pending && pendingSrc ? { pendingSrc } : {}), ...(matIdx ? { mat: matName() } : {}) });
 async function load(text: string) {
   let d: any;
   try { d = JSON.parse(text); if (!d || !Array.isArray(d.features)) throw new Error('bad'); } catch { msg('Open failed: this is not a valid MK CAD file. The current model was kept.'); return; }
@@ -634,9 +636,9 @@ async function load(text: string) {
   } else { features = loaded; }
   oldFeatures.forEach((f) => f.geo.dispose()); oldShown?.forEach((x) => x.geo.dispose());
   matIdx = Math.max(0, MATS.findIndex((x) => x[0] === d.mat));
-  curPlane = d.pendingPlane === 'XZ' || d.pendingPlane === 'YZ' ? d.pendingPlane : 'XY'; pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
+  curOrient = d.pendingOrient && typeof d.pendingOrient === 'object' ? { r: ([0, 1, 2, 3].includes(d.pendingOrient.r) ? d.pendingOrient.r : 0) as 0 | 1 | 2 | 3, f: !!d.pendingOrient.f } : {}; curPlane = d.pendingPlane === 'XZ' || d.pendingPlane === 'YZ' ? d.pendingPlane : 'XY'; pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
-(window as any).__cad = { cam: () => ({ ...cam }), sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
+(window as any).__cad = { bbox: () => { const bb = new THREE.Box3(); for (const g of shown ? shown.map((x) => x.geo) : features.map((f) => f.geo)) { g.computeBoundingBox(); if (g.boundingBox) bb.union(g.boundingBox); } return [bb.min.toArray().map((v) => +v.toFixed(4)), bb.max.toArray().map((v) => +v.toFixed(4))]; }, cam: () => ({ ...cam }), sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
 (window as any).__cad.pickAt = (x: number, y: number, add = false) => pickEnt({ x, y }, add);
 (window as any).__cad.selCount = () => selE.length;
 (window as any).__cad.consNow = () => cons.map((c) => ({ k: c.k, v: c.v }));
