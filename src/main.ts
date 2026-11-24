@@ -114,6 +114,7 @@ new ResizeObserver(resize).observe($('gfx'));
 
 // ---------- modes, ribbon, browser ----------
 function showTab(t: string) {
+  $('ribbon').scrollLeft = 0;
   document.querySelectorAll<HTMLElement>('#tabs button').forEach((b) => b.classList.toggle('act', b.dataset.tab === t));
   document.querySelectorAll<HTMLElement>('.tabpane').forEach((p) => p.classList.toggle('show', p.id === 'p-' + t));
 }
@@ -121,7 +122,7 @@ document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => (b.o
 function setMode(m: Mode) {
   mode = m; $('sk').style.display = m === 'sketch' ? 'block' : 'none'; $('v3').style.display = m === 'sketch' ? 'none' : 'block';
   $('tabsk').style.display = m === 'sketch' ? '' : 'none'; $('vc').style.display = $('nav').style.display = m === 'sketch' ? 'none' : '';
-  showTab(m === 'sketch' ? 'sketch' : 'model'); resize(); tree(); props(); refreshButtons();
+  $('fin2').classList.toggle('show', m === 'sketch'); showTab(m === 'sketch' ? 'sketch' : 'model'); resize(); tree(); props(); refreshButtons();
 }
 function refreshButtons() {
   const model = mode === 'model';
@@ -176,6 +177,7 @@ function editFeature(i: number) { editing = i; sel = i; startSketch(features[i].
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) pending = null; editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
 $('clear').onclick = () => { sketch = []; polyPts = []; draw(); props(); };
+$('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
   try { buildGeometry('extrude', sketch, 1); } catch (e) { msg((e as Error).message); return; }
