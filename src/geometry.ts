@@ -197,3 +197,25 @@ export function trimLine(l: { a: P; b: P }, others: { a: P; b: P }[], click: P):
   if (hi < 1 - 1e-9) out.push({ a: at(hi), b: l.b });
   return out;
 }
+
+/** Extend the end of line l that is nearer to `click` along its own direction until it meets the first of the other segments. Returns null when nothing is in the way. */
+export function extendLine(l: { a: P; b: P }, others: { a: P; b: P }[], click: P): { a: P; b: P } | null {
+  const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y; if (dx * dx + dy * dy < 1e-18) return null;
+  const endB = Math.hypot(click.x - l.b.x, click.y - l.b.y) <= Math.hypot(click.x - l.a.x, click.y - l.a.y);
+  const o0 = endB ? l.b : l.a; const d = endB ? { x: dx, y: dy } : { x: -dx, y: -dy };
+  let best = Infinity;
+  for (const o of others) {
+    const ex = o.b.x - o.a.x, ey = o.b.y - o.a.y, den = d.x * ey - d.y * ex; if (Math.abs(den) < 1e-12) continue;
+    const t = ((o.a.x - o0.x) * ey - (o.a.y - o0.y) * ex) / den, s = ((o.a.x - o0.x) * d.y - (o.a.y - o0.y) * d.x) / den;
+    if (t > 1e-9 && s >= -1e-9 && s <= 1 + 1e-9 && t < best) best = t;
+  }
+  if (!isFinite(best)) return null;
+  const n = { x: o0.x + d.x * best, y: o0.y + d.y * best };
+  return endB ? { a: l.a, b: n } : { a: n, b: l.b };
+}
+/** Split line l at the point of it nearest to `click`. Returns null when that point is within 1e-6 of an end. */
+export function splitLine(l: { a: P; b: P }, click: P): [{ a: P; b: P }, { a: P; b: P }] | null {
+  const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, L2 = dx * dx + dy * dy; if (L2 < 1e-18) return null;
+  const t = ((click.x - l.a.x) * dx + (click.y - l.a.y) * dy) / L2; if (t * Math.sqrt(L2) < 1e-6 || (1 - t) * Math.sqrt(L2) < 1e-6) return null;
+  const p = { x: l.a.x + dx * t, y: l.a.y + dy * t }; return [{ a: l.a, b: p }, { a: p, b: l.b }];
+}
