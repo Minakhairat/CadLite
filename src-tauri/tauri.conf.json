@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CadLite",
+  "productName": "MK Cad",
   "version": "0.1.0",
   "identifier": "app.cadlite.parts",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "CadLite",
+        "title": "MK Cad",
         "width": 1280,
         "height": 800
       }
