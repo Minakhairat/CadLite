@@ -73,6 +73,23 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
 .big.pend{max-width:58px;min-width:50px}.sm{font-size:11px;padding:0 12px 0 3px;gap:3px}
 #foot{height:20px;background:#2a303c;color:#cfd6e2;font-size:11px;display:flex;align-items:center;justify-content:center;white-space:nowrap;padding-bottom:env(safe-area-inset-bottom);flex:none}
 .panel{flex:none}
+
+
+/* light theme following the lesson frames (own colors, no Autodesk assets) */
+#title{background:#f3f5f8;color:#222;border-bottom:1px solid #d0d6e0}
+#title button{color:#222}#title button:hover{background:#dde6f3;border-color:#b6c3d8}
+#title .fam{border-left-color:#99a;opacity:.7}
+#title .srch{background:#fff;border:1px solid #c3cad6;color:#778}
+#tabs{background:#f3f5f8;height:26px;border-bottom:1px solid #c9d0dc}
+#tabs button{background:transparent;border:1px solid transparent;border-bottom:none;color:#222}
+#tabs button:hover{background:#e3e9f2}
+#tabs button.act{background:#e9eef6;border-color:#c9d0dc;font-weight:600}
+#tabs button[data-tab="x-File"]{background:#e8962e;color:#fff;font-weight:600;border-color:#c97b17;border-radius:3px 3px 0 0}
+#tabs button.ctx{background:#3d7fd0;color:#fff;border-color:#2c62a8}#tabs button.ctx.act{background:#2f6dbd}
+#ribbon{background:#f4f6fa}.panel .name{background:#e6ebf3;color:#445}
+#sk{background:linear-gradient(180deg,#eef2f8,#c9d4e6)}
+#foot,#status{background:#f3f5f8;color:#445;border-top:1px solid #d0d6e0}
+#browser h4{background:#e6ebf3}
 </style></head><body>
 <div id="title"><b>MK CAD</b><span class="fam">MK Tech</span><button id="save" title="Save to a .cadlite.json file">Save</button><button id="open">Open</button><button id="undo" title="Undo last feature">Undo feature</button><input id="file" type="file" accept=".json" hidden/><input class="srch" disabled placeholder="Search Help &amp; Commands (in development)" title="In development (قيد التطوير)"/><span class="doc" id="doc">Part1.cadlite.json (mm)</span></div>
 <div id="tabs"><button class="pendtab" data-tab="x-File">File</button><button class="act" data-tab="model">3D Model</button><button class="ctx" data-tab="sketch" id="tabsk" style="display:none">Sketch</button><button class="pendtab" data-tab="x-Annotate">Annotate</button><button class="pendtab" data-tab="x-Inspect">Inspect</button><button class="pendtab" data-tab="x-Tools">Tools</button><button class="pendtab" data-tab="x-CAM">CAM</button><button class="pendtab" data-tab="x-Manage">Manage</button><button data-tab="view">View</button><button class="pendtab" data-tab="x-Environments">Environments</button><button class="pendtab" data-tab="x-GetStarted">Get Started</button><button class="pendtab" data-tab="x-Collaborate">Collaborate</button></div>
