@@ -56,11 +56,18 @@ const grid = () => (cam.s > 12 ? 1 : cam.s > 4 ? 5 : 10);
 const toWorld = (px: number, py: number): P => ({ x: (px - sk.width / 2) / cam.s + cam.x, y: -(py - sk.height / 2) / cam.s + cam.y });
 const toScreen = (p: P) => ({ x: (p.x - cam.x) * cam.s + sk.width / 2, y: -(p.y - cam.y) * cam.s + sk.height / 2 });
 /** Solve line constraints, then circle constraints (lines stay fixed). Nothing is written when either solve fails. */
-async function solveAll(lines: L[], all: Con[]): Promise<void> {
+/** Persistent arc Concentric / Equal radius: re-applied after every solve and after a reference size edit. Throws when a reference has no usable centre. */
+function applyArcRels() {
+  for (const c of cons) { const k = c.k as string; if (k !== 'aconc' && k !== 'aeqr') continue; const arc = c.l as unknown as Entity, ref = c.m as unknown as Entity; if (!sketch.includes(arc) || !sketch.includes(ref) || arc.t !== 'arc') continue;
+    const rc = ref.t === 'arc' ? circle3(ref.a, ref.b, ref.m) : ref.t === 'circle' ? { c: ref.c, r: ref.r } : null; if (!rc) throw new Error('A reference of an arc constraint has no usable centre.');
+    const nu = k === 'aconc' ? arcConcentric(arc, rc.c) : arcEqualRadius(arc, rc.r); if (!nu || nu.t !== 'arc') throw new Error('An arc constraint cannot be kept for this size.'); arc.a = nu.a; arc.b = nu.b; arc.m = nu.m; }
+}
+async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); }
+async function solveAll0(lines: L[], all: Con[]): Promise<void> {
   await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
   const ac = all.filter((c) => (c.k as string) === 'tanla');
   if (ac.length) { const arcs = sketch.filter((e) => e.t === 'arc') as unknown as { a: P; b: P; m: P }[]; solveArcs((await getW()) as never, lines, arcs, ac.map((c) => ({ k: 'tanla' as const, arc: c.l as never, l: c.m as never })) as never); }
-  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla'); if (!cc.length) return;
+  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr'); if (!cc.length) return;
   const circles = sketch.filter((e) => e.t === 'circle') as unknown as { c: P; r: number }[];
   await solveCircleSketch(lines, circles, cc.map((c) => ({ k: c.k as 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad', ...(c.v !== undefined ? { v: c.v } : {}), c: (c.k === 'tanlc' ? c.l : c.l) as never, ...(c.k === 'tanlc' ? { l: c.m } : c.m ? { d: c.m as never } : {}) })) as never);
 }
@@ -140,7 +147,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)));
-  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
@@ -178,16 +185,16 @@ sk.addEventListener('pointerdown', (e) => {
     const cirH = ringHit(pr);
     if ((cirPick && cirPick.t === 'arc') || (!cirPick && arcH && !cirH)) {
       const hit: Entity | null = arcH ?? cirH; if (!hit) { msg('Click an arc or a circle (click its outline).'); return; }
-      if (!cirPick || !sketch.includes(cirPick)) { cirPick = hit; msg('Now click the reference arc or circle. It stays; the first arc is adjusted once (not kept as a constraint).'); return; }
+      if (!cirPick || !sketch.includes(cirPick)) { cirPick = hit; msg('Now click the reference arc or circle. It stays; the first arc is adjusted and the constraint is kept.'); return; }
       if (hit === cirPick) { msg('Pick a different second shape.'); return; }
       const first = cirPick as Extract<Entity, { t: 'arc' }>; cirPick = null;
       const ref = hit.t === 'arc' ? circle3(hit.a, hit.b, hit.m) : hit.t === 'circle' ? { c: hit.c, r: hit.r } : null; if (!ref) { msg('That reference shape has no usable centre. Nothing changed.'); return; }
-      if (usedByCon(first)) { msg('The first arc has constraints or dimensions, so it cannot be changed in place. Nothing changed.'); return; }
+      if (cons.some((c2) => (c2.l === (first as unknown) || c2.m === (first as unknown)) && (c2.k as string) !== 'aconc' && (c2.k as string) !== 'aeqr') || dims.some((d2) => d2.e === first)) { msg('The first arc has other constraints or dimensions, so it cannot be changed in place. Nothing changed.'); return; }
       const shared = sketch.some((o) => o !== first && (o.t === 'line' || o.t === 'arc') && [first.a, first.b].some((q) => [o.a, o.b].some((w2) => Math.hypot(w2.x - q.x, w2.y - q.y) < 1e-6)));
       if (shared) { msg('The arc shares an end point with another shape, which would not follow. Nothing changed.'); return; }
-      const nu = tool === 'cconc' ? arcConcentric(first, ref.c) : arcEqualRadius(first, ref.r) as Entity | null;
-      if (!nu || nu.t !== 'arc') { msg('This arc cannot be adjusted. Nothing changed.'); return; }
-      first.a = nu.a; first.b = nu.b; first.m = nu.m; ck(); props(); draw(); msg(tool === 'cconc' ? 'Arc moved so its centre matches the reference. Applied once, not kept as a constraint.' : 'Arc radius set to the reference radius about its own centre. Applied once, not kept as a constraint.'); return;
+      const old0 = { a: first.a, b: first.b, m: first.m }; const con: Con = { k: (tool === 'cconc' ? 'aconc' : 'aeqr'), l: first as unknown as L, m: hit as unknown as L }; cons.push(con);
+      try { applyArcRels(); } catch (er) { cons = cons.filter((x) => x !== con); first.a = old0.a; first.b = old0.b; first.m = old0.m; msg((er as Error).message); return; }
+      ck(); props(); draw(); msg(tool === 'cconc' ? 'Arc concentric constraint applied and kept: the arc follows the reference when its size is changed (Dimension tool or side panel).' : 'Arc equal radius constraint applied and kept: the arc follows the reference radius when it is changed (Dimension tool or side panel).'); return;
     }
   }
   if (tool === 'ctan' || tool === 'cconc' || tool === 'ceqr') {
@@ -303,7 +310,7 @@ type Extrude_L = Extract<Entity, { t: 'line' }>;
 const commitDim = () => {
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
-  try { dimApply(t.e, t.w, parseFloat(inp.value));
+  try { dimApply(t.e, t.w, parseFloat(inp.value)); try { applyArcRels(); } catch (er2) { msg((er2 as Error).message); }
     if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: parseFloat(inp.value) }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
   catch (er) { msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
@@ -425,7 +432,7 @@ function tree() {
 function numField(label: string, v: number, on: (n: number) => void) {
   const l = document.createElement('label'); l.textContent = label;
   const i = document.createElement('input'); i.type = 'number'; i.step = 'any'; i.value = String(+v.toFixed(4));
-  i.onchange = () => { const n = parseFloat(i.value); if (isFinite(n)) { on(n); draw(); } };
+  i.onchange = () => { const n = parseFloat(i.value); if (isFinite(n)) { on(n); if (cons.some((c) => (c.k as string) === 'aconc' || (c.k as string) === 'aeqr')) { try { applyArcRels(); } catch (er) { msg((er as Error).message); } } draw(); } };
   l.append(i); return l;
 }
 function props() {
