@@ -65,3 +65,11 @@ near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y:
   const L: Spec = { kind: 'extrude', sketch: [{ t: 'poly', pts: [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 15 }, { x: 15, y: 15 }, { x: 15, y: 40 }, { x: 0, y: 40 }] }], depth: 12 };
   for (const t of [1, 2, 3]) { const v = V(buildBodies(R, [L, { kind: 'shell', sketch: [], depth: t, edges: 'top' }])); if (!(v > 1000 && v < 11700)) { console.error('FAIL L shell', t, v); process.exit(1); } console.log('ok concave L shell t', t, v.toFixed(1)); }
 }
+
+// Sketch planes. A 10 x 20 rectangle extruded 5 on each plane: hand-derived world bounding boxes.
+{ const box = (plane: any) => { const b = buildBodies(R, [{ kind: 'extrude', sketch: [rect(0, 0, 10, 20)], depth: 5, plane }])[0]; return { bb: (b as any).boundingBox.bounds as number[][], v: R.measureVolume(b) }; };
+  const xy = box('XY'); near(xy.bb[1][2], 5, 1e-6, 'XY: extrudes to +Z 5');
+  const xz = box('XZ'); near(xz.bb[0][0], 0, 1e-6, 'XZ: x min 0'); near(xz.bb[1][0], 10, 1e-6, 'XZ: x max 10 (sketch x)'); near(xz.bb[0][2], 0, 1e-6, 'XZ: z min 0'); near(xz.bb[1][2], 20, 1e-6, 'XZ: z max 20 (sketch y)'); near(xz.bb[0][1], -5, 1e-6, 'XZ: y min -5 (normal is -Y)'); near(xz.bb[1][1], 0, 1e-6, 'XZ: y max 0'); near(xz.v, 1000, 1e-6, 'XZ volume 1000');
+  const yz = box('YZ'); near(yz.bb[0][1], 0, 1e-6, 'YZ: y min 0'); near(yz.bb[1][1], 10, 1e-6, 'YZ: y max 10 (sketch x)'); near(yz.bb[1][2], 20, 1e-6, 'YZ: z max 20 (sketch y)'); near(yz.bb[0][0], 0, 1e-6, 'YZ: x min 0'); near(yz.bb[1][0], 5, 1e-6, 'YZ: x max 5 (normal is +X)'); near(yz.v, 1000, 1e-6, 'YZ volume 1000');
+  // a feature on another plane joins an XY plate: plate 40x30x10 plus an XZ block 10x20x5 at y -5..0 that touches the plate's y=0 face
+  near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [rect(0, 0, 10, 20)], depth: 5, plane: 'XZ', op: 'join' }])), 12000 + 1000 - 10 * 10 * 5 * 0 - 0, 0.01, 'XZ join onto the XY plate (overlap: z 0..10 at y -5..0 is outside the plate, so no overlap)'); }
