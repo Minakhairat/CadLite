@@ -36,3 +36,10 @@ const P = (x: number, y: number) => ({ x, y });
   ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'h', l: b }]), 3, 0, 'dof: fixed + horizontal = 3');
   ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'h', l: b }, { k: 'len', l: b, v: 8 }]), 2, 0, 'dof: fixed + horizontal + length = 2');
   ({ a, b } = mk()); near(solveLines(w, [a, b], [{ k: 'fix', l: a }, { k: 'col', l: a, m: b }]), 2, 0, 'dof: fixed + collinear = 2'); }
+// symmetric: line a and line b mirror each other across line c (the x axis here)
+{ const c: L = { a: P(0, 0), b: P(10, 0) }, a: L = { a: P(2, 3), b: P(8, 5) }, b: L = { a: P(2, -2), b: P(8, -9) };
+  const d = solveLines(w, [c, a, b], [{ k: 'fix', l: c }, { k: 'fix', l: a }, { k: 'sym', l: a, m: b, n: c }]);
+  near(b.a.x, 2, 1e-6, 'symmetric: end 1 x'); near(b.a.y, -3, 1e-6, 'symmetric: end 1 y (hand -3)'); near(b.b.x, 8, 1e-6, 'symmetric: end 2 x'); near(b.b.y, -5, 1e-6, 'symmetric: end 2 y (hand -5)'); near(d, 0, 0, 'symmetric: dof 0 with c and a fixed'); }
+{ const c: L = { a: P(0, 0), b: P(10, 10) }, a: L = { a: P(2, 0), b: P(6, 0) }, b: L = { a: P(0, 1), b: P(1, 5) };
+  solveLines(w, [c, a, b], [{ k: 'fix', l: c }, { k: 'fix', l: a }, { k: 'sym', l: a, m: b, n: c }]);
+  near(b.a.x, 0, 1e-6, 'symmetric about y=x: end 1 x (hand 0)'); near(b.a.y, 2, 1e-6, 'symmetric about y=x: end 1 y (hand 2)'); near(b.b.x, 0, 1e-6, 'symmetric about y=x: end 2 x (hand 0)'); near(b.b.y, 6, 1e-6, 'symmetric about y=x: end 2 y (hand 6)'); }
