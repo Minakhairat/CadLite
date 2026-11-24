@@ -3,10 +3,10 @@ import type { P } from './geometry';
 export type L = { a: P; b: P };
 export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len' | 'fix' | 'coin' | 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad' | 'tanla' | 'aconc' | 'aeqr' | 'col'; l: L; m?: L; v?: number };
 export const LINE_KINDS: string[] = ['h', 'v', 'par', 'perp', 'eq', 'len', 'fix', 'coin', 'col'];
-type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
+type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] }; gcs?: { dof?: () => number } };
 
 /** Solve the constraints over all lines. Shared end points (same coordinates) stay joined. Writes the solution back into the lines. Throws when the constraints cannot all be met. */
-export function solveLines(w: W, lines: L[], cons: Con[], tol = 1e-6): void {
+export function solveLines(w: W, lines: L[], cons: Con[], tol = 1e-6): number {
   const pts: P[] = []; const key = (p: P) => { const i = pts.findIndex((q) => Math.hypot(q.x - p.x, q.y - p.y) <= tol); if (i >= 0) return i; pts.push({ x: p.x, y: p.y }); return pts.length - 1; };
   const ends = lines.map((l) => [key(l.a), key(l.b)]);
   const prims: any[] = pts.map((p, i) => ({ id: `p${i}`, type: 'point', x: p.x, y: p.y, fixed: false }));
@@ -34,4 +34,5 @@ export function solveLines(w: W, lines: L[], cons: Con[], tol = 1e-6): void {
   const collapsed = lines.some((_, i) => len0[i] > 1e-6 && Math.hypot(sol[ends[i][1]].x - sol[ends[i][0]].x, sol[ends[i][1]].y - sol[ends[i][0]].y) < 1e-6);
   if (collapsed) throw new Error('These constraints would collapse a line to a point. Remove one of them.');
   lines.forEach((l, i) => { l.a = { x: sol[ends[i][0]].x, y: sol[ends[i][0]].y }; l.b = { x: sol[ends[i][1]].x, y: sol[ends[i][1]].y }; });
+  const dof = w.gcs?.dof?.(); return typeof dof === 'number' && isFinite(dof) ? dof : -1; // degrees of freedom left in the line end points (-1 when the solver gives none)
 }
