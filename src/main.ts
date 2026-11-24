@@ -364,7 +364,7 @@ function startSketch(from?: Entity[], src?: SketchSrc | null) { cons = []; dims 
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
 $('ppxy').onclick = () => { $('pp').classList.remove('show'); startSketch(); };
 $('ppx').onclick = () => $('pp').classList.remove('show');
-function editFeature(i: number) { if (isMod(features[i].kind)) { msg('Fillet/Chamfer/Shell: delete this feature and add it again to change it.'); return; } editing = i; sel = i; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
+function editFeature(i: number) { if (isMod(features[i].kind)) { editMod(i); return; } editing = i; sel = i; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) { pending = null; pendingSrc = null; } editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
 $('clear').onclick = () => { cons = []; sketch = []; polyPts = []; draw(); props(); };
@@ -417,7 +417,7 @@ $('dok').onclick = async () => {
     if (mobile()) $('browser').classList.remove('open');
   } catch (err) { msg((err as Error).message); }
 };
-let modKind: 'fillet' | 'chamfer' | 'shell' | null = null;
+let modKind: 'fillet' | 'chamfer' | 'shell' | null = null; let modEdit: number | null = null;
 const holeUI = (on: boolean) => document.querySelectorAll<HTMLElement>('#mdlg .holeonly').forEach((e) => (e.style.display = on ? '' : 'none'));
 function openHole() {
   if (!features.length) { msg('Create a solid first.'); return; }
@@ -435,22 +435,30 @@ function openMod(k: 'fillet' | 'chamfer' | 'shell') {
   $('mdlg').classList.add('show');
 }
 $('fil').onclick = () => openMod('fillet'); $('cha').onclick = () => openMod('chamfer'); $('she').onclick = () => openMod('shell');
-$('mcancel').onclick = () => { $('mdlg').classList.remove('show'); modKind = null; };
+$('mcancel').onclick = () => { $('mdlg').classList.remove('show'); modKind = null; modEdit = null; };
+function editMod(i: number) {
+  const f = features[i];
+  if (f.kind === 'hole') { openHole(); const c = f.sketch[0] as Extract<Entity, { t: 'circle' }>; ($('hx') as HTMLInputElement).value = String(c.c.x); ($('hy') as HTMLInputElement).value = String(c.c.y); ($('hd') as HTMLInputElement).value = String(c.r * 2); ($('msize') as HTMLInputElement).value = String(f.depth); }
+  else { openMod(f.kind as 'fillet' | 'chamfer' | 'shell'); ($('msize') as HTMLInputElement).value = String(f.depth); ($('medges') as HTMLSelectElement).value = f.edges ?? 'all'; }
+  modEdit = i; msg(`Editing ${f.kind} ${i + 1}: change the values and press OK. Cancel keeps it as it was.`);
+}
 $('mok').onclick = async () => {
   if (!modKind) return;
   if ((modKind as string) === 'hole') {
     const hx = parseFloat(($('hx') as HTMLInputElement).value), hy = parseFloat(($('hy') as HTMLInputElement).value), hd = parseFloat(($('hd') as HTMLInputElement).value), dp = parseFloat(($('msize') as HTMLInputElement).value);
     if (!(hd > 0) || !(dp >= 0) || !isFinite(hx) || !isFinite(hy)) { msg('Hole: diameter must be greater than 0, depth 0 or more, X/Y numbers.'); return; }
     const hf: Feature = { kind: 'hole', depth: dp, sketch: [{ t: 'circle', c: { x: hx, y: hy }, r: hd / 2 }], geo: new THREE.BufferGeometry() };
-    if (!(await applyFeatures([...features, hf]))) return;
-    sel = features.length - 1; $('mdlg').classList.remove('show'); modKind = null; rebuild(); tree(); refreshButtons();
+    const hl = modEdit !== null ? features.map((x, k) => (k === modEdit ? hf : x)) : [...features, hf]; const hsel = modEdit ?? hl.length - 1;
+    if (!(await applyFeatures(hl))) return;
+    sel = hsel; modEdit = null; $('mdlg').classList.remove('show'); modKind = null; rebuild(); tree(); refreshButtons();
     msg(`Hole applied. Total volume: ${(shown ?? []).reduce((s, x) => s + volume(x.geo), 0).toFixed(1)} mm³`); return;
   }
   const size = parseFloat(($('msize') as HTMLInputElement).value); const edges = ($('medges') as HTMLSelectElement).value as Feature['edges'];
   if (!(size > 0)) { msg('Size must be greater than 0'); return; }
   const f: Feature = { kind: modKind, depth: size, sketch: [], geo: new THREE.BufferGeometry(), edges };
-  if (!(await applyFeatures([...features, f]))) return;
-  sel = features.length - 1; $('mdlg').classList.remove('show'); const k = modKind; modKind = null; rebuild(); tree(); refreshButtons();
+  const ml = modEdit !== null ? features.map((x, k) => (k === modEdit ? f : x)) : [...features, f]; const msel = modEdit ?? ml.length - 1;
+  if (!(await applyFeatures(ml))) return;
+  sel = msel; modEdit = null; $('mdlg').classList.remove('show'); const k = modKind; modKind = null; rebuild(); tree(); refreshButtons();
   msg(`${k[0].toUpperCase() + k.slice(1)} applied. Total volume: ${(shown ?? []).reduce((s, x) => s + volume(x.geo), 0).toFixed(1)} mm³`);
 };
 $('delft').onclick = async () => { if (sel === null) return; const i = sel; const next = features.filter((_, k) => k !== i); if (!(await applyFeatures(next))) return; sel = null; rebuild(); tree(); refreshButtons(); };
