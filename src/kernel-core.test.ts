@@ -50,3 +50,13 @@ near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y:
 // Sphere: a half disc (true arc plus a line on the axis) revolved about Z is a sphere, volume 4/3 pi r^3
 { const r = 10, h = r * Math.SQRT1_2; const poly = { t: 'poly', pts: [{ x: 0, y: -r }, { x: h, y: -h }, { x: r, y: 0 }, { x: h, y: h }, { x: 0, y: r }], segs: [{ a: { x: 0, y: -r }, b: { x: 0, y: r }, m: { x: r, y: 0 } }, { a: { x: 0, y: r }, b: { x: 0, y: -r } }] } as any;
   near(V(buildBodies(R, [{ kind: 'revolve', sketch: [poly], depth: 0 }])), (4 / 3) * Math.PI * 1000, 0.001, 'revolve half disc = sphere (exact)'); }
+// Regression: Shell after Hole + Chamfer used to return an invalid solid (volume 16275 instead of about 6.7k). It must be rejected.
+{
+  const blk: Spec = { kind: 'extrude', sketch: [rect(0, 0, 40, 35)], depth: 15 };
+  const h: Spec = { kind: 'extrude', sketch: [{ t: 'circle', c: { x: 10, y: 10 }, r: 2.5 }], depth: 15, op: 'cut' };
+  const sh: Spec = { kind: 'shell', sketch: [], depth: 2, edges: 'top' };
+  const chm = (d: number): Spec => ({ kind: 'chamfer', sketch: [], depth: d, edges: 'bottom' });
+  let bad = false; try { buildBodies(R, [blk, h, chm(3), sh]); } catch (e) { bad = /invalid solid/.test((e as Error).message); }
+  if (!bad) { console.error('FAIL invalid shell after hole+chamfer must be rejected'); process.exit(1); } console.log('ok invalid Shell (hole+chamfer 3) rejected');
+  const v2 = V(buildBodies(R, [blk, chm(2), sh])); if (!(v2 > 5000 && v2 < 6492)) { console.error('FAIL chamfer then shell volume', v2); process.exit(1); } console.log('ok chamfer 2 then shell volume', v2.toFixed(2), '(< plain shell 6492)');
+}
