@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { toOBJ, toSTEP, toDXF } from './exporters';
 import { Entity, Feature, P, buildGeometry, snap, outline, toSTL, volume } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -128,7 +129,7 @@ function refreshButtons() {
   const model = mode === 'model';
   ($('extrude') as HTMLButtonElement).disabled = !model || !pending; ($('revolve') as HTMLButtonElement).disabled = !model || !pending;
   ($('editft') as HTMLButtonElement).disabled = !model || sel === null; ($('delft') as HTMLButtonElement).disabled = !model || sel === null;
-  ($('stl') as HTMLButtonElement).disabled = !features.length; ($('startsk') as HTMLButtonElement).disabled = !model;
+  for (const id of ['stl', 'obj', 'step']) ($(id) as HTMLButtonElement).disabled = !features.length; ($('startsk') as HTMLButtonElement).disabled = !model;
   document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
 }
 function tree() {
@@ -229,7 +230,7 @@ function load(text: string) {
   const d = JSON.parse(text);
   features.forEach((f) => f.geo.dispose());
   features = d.features.map((f: any) => ({ ...f, geo: buildGeometry(f.kind, f.sketch, f.depth) }));
-  pending = d.sketch?.length ? d.sketch : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; STL export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
+  pending = d.sketch?.length ? d.sketch : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
 (window as any).__cad = { serialize, load, volumes: () => features.map((f) => volume(f.geo)), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
 setInterval(() => { try { localStorage.setItem('cadlite', serialize()); } catch { /* ignore */ } }, 2000);
@@ -241,13 +242,26 @@ function overlapPair(): [number, number] | null {
   for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) if (bs[i].intersectsBox(bs[j])) return [i, j];
   return null;
 }
-$('stl').onclick = () => {
+function download(name: string, text: string, type: string) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); }
+function export3d(ext: 'stl' | 'obj' | 'step') {
   if (!features.length) return;
   const ov = overlapPair();
-  if (ov) { msg(`Cannot export: Extrusion/Revolution ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). Joining solids is not supported, so STL export is blocked. Delete or edit one.`); return; }
-  const geos = features.map((f) => { const g = f.geo.clone(); if (f.kind === 'revolve') g.rotateX(Math.PI / 2); return g; });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([toSTL(geos)], { type: 'model/stl' })); a.download = 'part.stl'; a.click();
-};
+  if (ov) { msg(`Cannot export: Extrusion/Revolution ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). Joining solids is not supported, so export is blocked. Delete or edit one.`); return; }
+  try {
+    if (ext === 'step') download('part.step', toSTEP(features), 'application/step');
+    else if (ext === 'obj') download('part.obj', toOBJ(features), 'text/plain');
+    else { const geos = features.map((f) => { const g = f.geo.clone(); if (f.kind === 'revolve') g.rotateX(Math.PI / 2); return g; }); download('part.stl', toSTL(geos), 'model/stl'); }
+    msg(`Exported part.${ext} (mm).`);
+  } catch (e) { msg((e as Error).message); }
+}
+$('stl').onclick = () => export3d('stl'); $('obj').onclick = () => export3d('obj'); $('step').onclick = () => export3d('step');
+function exportDxf() {
+  const src = mode === 'sketch' ? sketch : sel !== null ? features[sel].sketch : pending ?? (features.length ? features[features.length - 1].sketch : []);
+  if (!src.length) { msg('Nothing to export: draw a sketch or select a feature first.'); return; }
+  download('sketch.dxf', toDXF(src), 'application/dxf'); msg('Exported sketch.dxf (2D, mm).');
+}
+$('dxf').onclick = exportDxf; $('dxf2').onclick = exportDxf;
+
 
 setMode('model'); resize(); setView('home');
 try { const t = localStorage.getItem('cadlite'); if (t) load(t); } catch { /* ignore */ }
