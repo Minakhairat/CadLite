@@ -1,4 +1,4 @@
-import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity } from './sketch-ops';
+import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity } from './sketch-ops';
 import { circle3, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (!(Math.abs(a - b) <= tol)) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(4)); };
 const line: Entity = { t: 'line', a: { x: 1, y: 2 }, b: { x: 4, y: 6 } };
@@ -22,3 +22,11 @@ if (offsetEntity({ t: 'circle', c: { x: 1, y: 1 }, r: 3 }, -3) !== null) { conso
 o = offsetEntity(arc, 2) as any; const co = circle3(o.a, o.b, o.m)!; near(co.r, 7, 1e-9, 'arc offset radius'); near(co.c.y, 0, 1e-9, 'arc offset keeps centre');
 o = offsetEntity(rect, 1) as any; near(o.b.x - o.a.x, 6, 1e-9, 'rect offset width'); near(o.b.y - o.a.y, 4, 1e-9, 'rect offset height');
 if (offsetEntity(rect, -1.5) !== null) { console.error('FAIL rect collapse'); process.exit(1); } console.log('ok rect that would collapse is refused');
+
+// Scale about (10,10) by 2 (hand values)
+{ const c = { x: 10, y: 10 };
+  let s = scaleEntity({ t: 'circle', c: { x: 12, y: 10 }, r: 3 }, c, 2) as any; near(s.c.x, 14, 1e-9, 'scale circle centre x (10+2*2)'); near(s.r, 6, 1e-9, 'scale circle radius 3 to 6');
+  s = scaleEntity({ t: 'rect', a: { x: 10, y: 10 }, b: { x: 15, y: 14 } }, c, 2) as any; near(s.b.x - s.a.x, 10, 1e-9, 'scale rect width 5 to 10'); near(s.b.y - s.a.y, 8, 1e-9, 'scale rect height 4 to 8'); near(s.a.x, 10, 1e-9, 'scale rect corner on the base point stays');
+  s = scaleEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 3, y: 4 } }, c, 0.5) as any; near(Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y), 2.5, 1e-9, 'scale line 5 to 2.5'); near(s.a.x, 5, 1e-9, 'scale line start (10+(0-10)*0.5)');
+  s = scaleEntity({ t: 'arc', a: { x: 10, y: 0 }, b: { x: -10, y: 0 }, m: { x: 0, y: 10 } }, { x: 0, y: 0 }, 3) as any; const cc = circle3(s.a, s.b, s.m)!; near(cc.r, 30, 1e-9, 'scale arc radius 10 to 30'); near(cc.c.x, 0, 1e-9, 'scale arc keeps centre');
+  if (scaleEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 1, y: 1 } }, c, 0) !== null || scaleEntity({ t: 'line', a: { x: 0, y: 0 }, b: { x: 1, y: 1 } }, c, -2) !== null) { console.error('FAIL scale factor 0 or negative must be refused'); process.exit(1); } console.log('ok scale factor 0 or negative is refused'); }
