@@ -1,4 +1,4 @@
-# MK Cad
+# MK CAD
 
 A small parametric-style CAD tool: 2D sketch, then 3D part (extrude / revolve). No assemblies, by design.
 One TypeScript codebase: website, desktop (Tauri) and iOS/Android (Capacitor).
