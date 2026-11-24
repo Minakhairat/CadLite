@@ -122,7 +122,8 @@ function draw() {
   ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; ctx.fillText(curPlane === 'YZ' ? 'Y' : 'X', sk.width - 16 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText(curPlane === 'XY' ? 'Y' : 'Z', o.x + 5 * dpr, 14 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
   const c = current(); const all = c ? [...sketch, c] : sketch;
-  for (const e of all) { ctx.strokeStyle = selE.includes(e) ? '#e8590c' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
+  for (const e of all) { ctx.setLineDash(e.cn ? [8 * dpr, 5 * dpr] : []); ctx.strokeStyle = selE.includes(e) ? '#e8590c' : e.cn ? '#7a8794' : '#1f6fd1'; if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
+  ctx.setLineDash([]);
   if (winA && winB) { const a = toScreen(winA), b = toScreen(winB); const cross = winB.x < winA.x; ctx.save(); ctx.setLineDash(cross ? [6 * dpr, 4 * dpr] : []); ctx.strokeStyle = cross ? '#2a8a3a' : '#1f6fd1'; ctx.fillStyle = cross ? 'rgba(42,138,58,0.10)' : 'rgba(31,111,209,0.10)'; ctx.lineWidth = 1.2 * dpr; ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.restore(); }
   if (segPts.length && hover) {
     ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = tool === 'line' ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
@@ -437,6 +438,8 @@ function pickEnt(p: P, add: boolean): boolean {
   msg(selE.length ? `${selE.length} shape(s) selected.` : 'Nothing selected.'); draw(); return !!best;
 }
 const usedByCon = (e: Entity) => cons.some((c) => c.l === (e as unknown) || c.m === (e as unknown)) || dims.some((d) => d.e === e);
+function toggleConstruction() { if (!selE.length) { msg('Select shapes first (Select tool), then press Construction.'); return; } const to = !selE.every((e) => e.cn); for (const e of selE) { if (to) e.cn = true; else delete e.cn; } ck(); props(); draw(); msg(to ? `${selE.length} shape(s) are now construction (dashed, not part of the profile).` : `${selE.length} shape(s) are normal again.`); }
+const xconEl = document.getElementById('xcon'); if (xconEl) xconEl.onclick = toggleConstruction;
 function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).`); }
 type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off';
 let xop: XOp = 'move';
@@ -482,7 +485,7 @@ addEventListener('keydown', (e) => {
 
 // ---------- actions ----------
 function snapshotSrc(): SketchSrc | null {
-  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc') && !cons.length && !dims.length) return null;
+  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || e.cn) && !cons.length && !dims.length) return null;
   const ix = (o: unknown) => sketch.indexOf(o as Entity);
   return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })) };
 }
@@ -508,7 +511,7 @@ $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
   let src: SketchSrc | null = null;
-  try { src = snapshotSrc(); const rl = resolveLoops(sketch); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
+  try { src = snapshotSrc(); const prof = sketch.filter((e) => !e.cn); if (!prof.length) throw new Error('The sketch has only construction shapes. Draw at least one normal shape for the profile.'); const rl = resolveLoops(prof); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
   const kind = editing !== null ? (features[editing].kind as 'extrude' | 'revolve') : null;
   pending = clone(sketch); pendingSrc = src; cons = []; dims = []; sketch = []; setMode('model');
   if (editing !== null && kind) openDlg(kind, features[editing].depth, features[editing].op, features[editing].dir); else msg('Sketch finished. Choose Extrude or Revolve.');
