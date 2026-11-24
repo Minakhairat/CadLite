@@ -1,7 +1,7 @@
 // 2D geometric constraints on sketch lines, solved with planegcs (FreeCAD's solver). The wrapper is injected so Node tests and the browser share this code.
 import type { P } from './geometry';
 export type L = { a: P; b: P };
-export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len' | 'fix' | 'coin' | 'tanlc' | 'tancc' | 'conc' | 'eqr'; l: L; m?: L; v?: number };
+export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len' | 'fix' | 'coin' | 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad'; l: L; m?: L; v?: number };
 export const LINE_KINDS: string[] = ['h', 'v', 'par', 'perp', 'eq', 'len', 'fix', 'coin'];
 type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
 
