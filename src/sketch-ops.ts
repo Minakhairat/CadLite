@@ -56,3 +56,12 @@ export function stretchEntity(e: Entity, w: Win, dx: number, dy: number): Entity
   const pts = isPt(e) ? [(e as PointE).p] : e.t === 'line' ? [e.a, e.b] : e.t === 'rect' ? [e.a, e.b, { x: e.a.x, y: e.b.y }, { x: e.b.x, y: e.a.y }] : e.pts;
   return pts.some((p) => inWin(w, p)) ? transformEntity(e, f) : e;
 }
+
+/** Move an arc so its centre sits on c. Radius and sweep stay. Null for a degenerate arc. */
+export function arcConcentric(e: Extract<Entity, { t: 'arc' }>, c: P): Entity | null {
+  const k = circle3(e.a, e.b, e.m); if (!k) return null; return transformEntity(e, moveTf(c.x - k.c.x, c.y - k.c.y));
+}
+/** Scale an arc about its own centre so its radius becomes r. The centre and the sweep angle stay. Null for a degenerate arc or r <= 0. */
+export function arcEqualRadius(e: Extract<Entity, { t: 'arc' }>, r: number): Entity | null {
+  const k = circle3(e.a, e.b, e.m); if (!k || !(r > 1e-9) || !Number.isFinite(r)) return null; return transformEntity(e, scaleTf(k.c, r / k.r));
+}
