@@ -13,7 +13,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'none' = 'rect';
 let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null;
 let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
@@ -108,7 +108,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)));
-  for (const c of cons) { const mid = (l: L) => toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); if (c.k === 'len') continue; const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); if (c.k === 'len') continue; const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
@@ -122,14 +122,14 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e); const pr = ptRaw(e);
-  if (tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq') {
+  if (tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq' || tool === 'cfix') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
     sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
     if (bi < 0) { msg('Constraint: click a line.'); return; }
     const ln = sketch[bi] as Extract<Entity, { t: 'line' }>; const two = tool === 'cpar' || tool === 'cper' || tool === 'ceq';
     if (two && (!conPick || !sketch.includes(conPick as Entity))) { conPick = ln; msg('Now click the second line.'); return; }
     if (two && conPick === ln) { msg('Pick a different second line.'); return; }
-    const c: Con = { k: ({ chor: 'h', cver: 'v', cpar: 'par', cper: 'perp', ceq: 'eq' } as const)[tool], l: ln, ...(two ? { m: conPick! } : {}) }; if (two) { c.l = conPick!; c.m = ln; } conPick = null;
+    const c: Con = { k: ({ chor: 'h', cver: 'v', cpar: 'par', cper: 'perp', ceq: 'eq', cfix: 'fix' } as const)[tool], l: ln, ...(two ? { m: conPick! } : {}) }; if (two) { c.l = conPick!; c.m = ln; } conPick = null;
     cons.push(c); msg('Solving...');
     solveSketch(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
