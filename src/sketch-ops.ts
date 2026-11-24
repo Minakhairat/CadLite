@@ -33,3 +33,11 @@ export function offsetEntity(e: Entity, d: number): Entity | null {
   if (e.t === 'rect') { const x0 = Math.min(e.a.x, e.b.x) - d, x1 = Math.max(e.a.x, e.b.x) + d, y0 = Math.min(e.a.y, e.b.y) - d, y1 = Math.max(e.a.y, e.b.y) + d; return x1 - x0 > 1e-9 && y1 - y0 > 1e-9 ? { t: 'rect', a: { x: x0, y: y0 }, b: { x: x1, y: y1 } } : null; }
   return null; // polygons: not supported yet
 }
+
+/** Uniform scale by k about c (k > 0). Circle radius scales too; a rectangle stays axis-aligned. */
+export const scaleTf = (c: P, k: number): Tf => (p) => ({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k });
+export function scaleEntity(e: Entity, c: P, k: number): Entity | null {
+  if (!(k > 1e-9) || !Number.isFinite(k)) return null;
+  const r = transformEntity(e, scaleTf(c, k));
+  return r.t === 'circle' ? { ...r, r: e.t === 'circle' ? e.r * k : r.r } : r;
+}
