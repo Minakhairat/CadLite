@@ -5,7 +5,7 @@ import { Entity, outline, inside } from './geometry';
 export type Op = 'new' | 'join' | 'cut' | 'intersect';
 export type Dir = 'normal' | 'flip' | 'sym';
 export type Edges = 'all' | 'vertical' | 'top' | 'bottom';
-export type Spec = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
+export type Spec = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
 type R = typeof Replicad;
 
 const valid = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.t === 'poly');
@@ -45,6 +45,16 @@ export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
   measure = (s) => R.measureVolume(s);
   let bodies: Replicad.Shape3D[] = [];
   feats.forEach((f, i) => {
+    if (f.kind === 'hole') {
+      if (!bodies.length) throw new Error(`Feature ${i + 1}: Hole needs an existing solid.`);
+      const c = f.sketch[0]; if (!c || c.t !== 'circle' || !(c.r > 0)) throw new Error('Hole: diameter must be greater than 0.');
+      const hi = Math.max(...bodies.map((b) => bb(b)[1][2])), lo = Math.min(...bodies.map((b) => bb(b)[0][2]));
+      const h = f.depth > 0 ? f.depth : hi - lo + 2; const cyl = R.makeCylinder(c.r, h, [c.c.x, c.c.y, hi - h + (f.depth > 0 ? 0 : 1)], [0, 0, 1]);
+      const out: Replicad.Shape3D[] = []; let changed = false;
+      for (const b of bodies) { if (!touches(b, cyl)) { out.push(b); continue; } const r = b.cut(cyl); if (Math.abs(vol(R, b) - vol(R, r)) > 1e-6) changed = true; out.push(r); }
+      if (!changed) throw new Error('Hole: the hole is not on the solid (check the X/Y position).');
+      bodies = out; return;
+    }
     if (f.kind === 'fillet' || f.kind === 'chamfer' || f.kind === 'shell') {
       const nm = f.kind === 'fillet' ? 'Fillet' : f.kind === 'chamfer' ? 'Chamfer' : 'Shell';
       if (!bodies.length) throw new Error(`Feature ${i + 1}: ${nm} needs an existing solid.`);
