@@ -9,6 +9,7 @@ export type Entity = (
   | { t: 'circle'; c: P; r: number }
   | { t: 'poly'; pts: P[]; segs?: Seg[] }
   | { t: 'line'; a: P; b: P }
+  | { t: 'point'; p: P } // point: a marker, never part of the profile
   | { t: 'arc'; a: P; b: P; m: P } // arc: start a, end b, passing through m
 ) & { cn?: boolean }; // cn: construction shape, drawn dashed, never part of the profile
 export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym'; plane?: 'XY' | 'XZ' | 'YZ'; orient?: { r?: 0 | 1 | 2 | 3; f?: boolean } };
@@ -22,6 +23,7 @@ export function outline(e: Entity): P[] {
     return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
   }
   if (e.t === 'circle') return Array.from({ length: 64 }, (_, i) => ({ x: e.c.x + e.r * Math.cos((i / 64) * 2 * Math.PI), y: e.c.y + e.r * Math.sin((i / 64) * 2 * Math.PI) }));
+  if (e.t === 'point') return [e.p];
   if (e.t === 'line') return [e.a, e.b];
   if (e.t === 'arc') return arcPoints(e.a, e.b, e.m);
   return e.pts;
@@ -80,7 +82,7 @@ export function inside(p: P, poly: P[]) {
   }
   return c;
 }
-const valid = (e: Entity) => (e.t === 'line' || e.t === 'arc' ? false : e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
+const valid = (e: Entity) => (e.t === 'line' || e.t === 'arc' || e.t === 'point' ? false : e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
 
 /** Build shapes: closed loops that sit inside another loop become holes. */
 export function buildShapes(sketch: Entity[]): THREE.Shape[] {
