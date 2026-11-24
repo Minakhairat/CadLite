@@ -12,9 +12,12 @@
     "desktop:build": "tauri build",
     "cap:sync": "npm run build && cap sync",
     "android": "cap open android",
-    "ios": "cap open ios"
+    "ios": "cap open ios",
+    "icons": "tauri icon assets/icon.svg"
   },
-  "dependencies": { "three": "^0.170.0" },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
   "devDependencies": {
     "@capacitor/android": "^6.1.0",
     "@capacitor/cli": "^6.1.0",
