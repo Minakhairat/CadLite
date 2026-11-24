@@ -457,13 +457,13 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
 // ---------- save / open / export ----------
-const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [] });
+const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.src ? { src: f.src } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [], ...(pending && pendingSrc ? { pendingSrc } : {}) });
 async function load(text: string) {
   const d = JSON.parse(text);
   features.forEach((f) => f.geo.dispose());
   const loaded: Feature[] = d.features.map((f: any) => ({ ...f, sketch: f.sketch ?? [], geo: geoOf(f) }));
   features = []; shown = null; if (!(await applyFeatures(loaded))) { features = loaded; }
-  pending = d.sketch?.length ? d.sketch : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
+  pending = d.sketch?.length ? d.sketch : null; pendingSrc = pending && d.pendingSrc ? d.pendingSrc : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
 (window as any).__cad = { sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
 setInterval(() => { try { localStorage.setItem('cadlite', serialize()); } catch { /* ignore */ } }, 2000);
