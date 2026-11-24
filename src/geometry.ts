@@ -10,7 +10,7 @@ export type Entity =
   | { t: 'poly'; pts: P[]; segs?: Seg[] }
   | { t: 'line'; a: P; b: P }
   | { t: 'arc'; a: P; b: P; m: P }; // arc: start a, end b, passing through m
-export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym' };
+export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym'; plane?: 'XY' | 'XZ' | 'YZ' };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
 
@@ -144,11 +144,17 @@ export function toSTL(geos: THREE.BufferGeometry[]): string {
   return s + 'endsolid cadlite\n';
 }
 
-export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number, dir?: 'normal' | 'flip' | 'sym'): THREE.BufferGeometry {
-  if (kind !== 'extrude') return revolve(sketch);
+/** Move geometry built in sketch space onto its sketch plane. XZ: sketch x to X, y to Z, extrusion to -Y. YZ: x to Y, y to Z, extrusion to +X. Same mapping as the kernel. */
+export function toSketchPlane(g: THREE.BufferGeometry, plane?: 'XY' | 'XZ' | 'YZ'): THREE.BufferGeometry {
+  if (plane === 'XZ') g.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -1, 0)));
+  else if (plane === 'YZ') g.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0)));
+  return g;
+}
+export function buildGeometry(kind: 'extrude' | 'revolve', sketch: Entity[], depth: number, dir?: 'normal' | 'flip' | 'sym', plane?: 'XY' | 'XZ' | 'YZ'): THREE.BufferGeometry {
+  if (kind !== 'extrude') return toSketchPlane(revolve(sketch), plane);
   const g = extrude(sketch, depth);
   if (dir === 'flip') g.translate(0, 0, -depth); else if (dir === 'sym') g.translate(0, 0, -depth / 2);
-  return g;
+  return toSketchPlane(g, plane);
 }
 
 /** Round the corner where two lines meet at p with radius r. Returns the two new end points and the arc. */
