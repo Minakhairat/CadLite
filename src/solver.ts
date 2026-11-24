@@ -14,3 +14,4 @@ export async function solveCircleSketch(lines: L[], circles: C[], cons: CCon[]):
   if (!w) w = make_gcs_wrapper(wasmUrl).catch((e) => { w = null; throw e; });
   solveCircles((await w) as never, lines, circles, cons);
 }
+export const getW = async (): Promise<unknown> => { if (!w) w = make_gcs_wrapper(wasmUrl).catch((e) => { w = null; throw e; }); return w; };
