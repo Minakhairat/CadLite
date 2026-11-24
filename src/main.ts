@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
+import { solveSketch, Con, L } from './solver';
 import { computeBodies, stepOf, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
@@ -12,7 +13,8 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'none' = 'rect';
+let cons: Con[] = []; let conPick: L | null = null;
 let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
@@ -105,26 +107,40 @@ function draw() {
     if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
-  dims = dims.filter((d) => sketch.includes(d.e));
+  dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)));
+  for (const c of cons) { const mid = (l: L) => toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); if (c.k === 'len') continue; const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
   if (c && drag) { ctx.fillStyle = '#123'; ctx.font = `${13 * dpr}px sans-serif`; const s = toScreen(drag.cur); ctx.fillText(c.t === 'rect' ? `${Math.abs(c.b.x - c.a.x)} x ${Math.abs(c.b.y - c.a.y)} mm` : c.t === 'circle' ? `R ${c.r.toFixed(1)} mm` : '', s.x + 12, s.y - 12); }
 }
+function ptRaw(e: PointerEvent): P { const r = sk.getBoundingClientRect(); return toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); }
 function pt(e: PointerEvent): P { const r = sk.getBoundingClientRect(); const w = toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); const g = grid(); return { x: snap(w.x, g), y: snap(w.y, g) }; }
 let pan: { x: number; y: number } | null = null;
 sk.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return; // right click opens the Inventor-style OK / Cancel menu
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
-  sk.setPointerCapture(e.pointerId); const p = pt(e);
+  sk.setPointerCapture(e.pointerId); const p = pt(e); const pr = ptRaw(e);
+  if (tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq') {
+    let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
+    sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
+    if (bi < 0) { msg('Constraint: click a line.'); return; }
+    const ln = sketch[bi] as Extract<Entity, { t: 'line' }>; const two = tool === 'cpar' || tool === 'cper' || tool === 'ceq';
+    if (two && (!conPick || !sketch.includes(conPick as Entity))) { conPick = ln; msg('Now click the second line.'); return; }
+    if (two && conPick === ln) { msg('Pick a different second line.'); return; }
+    const c: Con = { k: ({ chor: 'h', cver: 'v', cpar: 'par', cper: 'perp', ceq: 'eq' } as const)[tool], l: ln, ...(two ? { m: conPick! } : {}) }; if (two) { c.l = conPick!; c.m = ln; } conPick = null;
+    cons.push(c); msg('Solving...');
+    solveSketch(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
+    return;
+  }
   if (tool === 'trim') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
-    sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(p, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
+    sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
     if (bi < 0) { msg('Trim: click a line (crossing lines only).'); return; }
     const l = sketch[bi] as Extract<Entity, { t: 'line' }>;
     const others = sketch.filter((e, i) => i !== bi && e.t === 'line') as Extract<Entity, { t: 'line' }>[];
-    try { const parts = trimLine(l, others, p); sketch.splice(bi, 1, ...parts.map((q) => ({ t: 'line' as const, a: q.a, b: q.b }))); msg(parts.length ? 'Trimmed.' : 'Line removed (it had no crossing).'); props(); draw(); } catch (er) { msg((er as Error).message); }
+    try { const parts = trimLine(l, others, pr); sketch.splice(bi, 1, ...parts.map((q) => ({ t: 'line' as const, a: q.a, b: q.b }))); msg(parts.length ? 'Trimmed.' : 'Line removed (it had no crossing).'); props(); draw(); } catch (er) { msg((er as Error).message); }
     return;
   }
   if (tool === 'sfil') {
@@ -179,7 +195,8 @@ type Extrude_L = Extract<Entity, { t: 'line' }>;
 const commitDim = () => {
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
-  try { dimApply(t.e, t.w, parseFloat(inp.value)); if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
+  try { dimApply(t.e, t.w, parseFloat(inp.value));
+    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: parseFloat(inp.value) }; cons.push(lc); solveSketch(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
   catch (er) { msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
@@ -320,14 +337,14 @@ function props() {
 }
 
 // ---------- actions ----------
-function startSketch(from?: Entity[]) { sketch = from ? clone(from) : pending ? clone(pending) : []; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
+function startSketch(from?: Entity[]) { cons = []; conPick = null; sketch = from ? clone(from) : pending ? clone(pending) : []; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
 $('ppxy').onclick = () => { $('pp').classList.remove('show'); startSketch(); };
 $('ppx').onclick = () => $('pp').classList.remove('show');
 function editFeature(i: number) { if (isMod(features[i].kind)) { msg('Fillet/Chamfer/Shell: delete this feature and add it again to change it.'); return; } editing = i; sel = i; startSketch(features[i].sketch); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) pending = null; editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
-$('clear').onclick = () => { sketch = []; polyPts = []; draw(); props(); };
+$('clear').onclick = () => { cons = []; sketch = []; polyPts = []; draw(); props(); };
 $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
@@ -422,7 +439,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; conPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
@@ -435,7 +452,7 @@ async function load(text: string) {
   features = []; shown = null; if (!(await applyFeatures(loaded))) { features = loaded; }
   pending = d.sketch?.length ? d.sketch : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
-(window as any).__cad = { serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
+(window as any).__cad = { sketchNow: () => JSON.parse(JSON.stringify(sketch)), serialize, load, volumes: () => (shown ? shown.map((b) => volume(b.geo)) : features.map((f) => volume(f.geo))), state: () => ({ mode, features: features.length, pending: !!pending, sel }) };
 setInterval(() => { try { localStorage.setItem('cadlite', serialize()); } catch { /* ignore */ } }, 2000);
 $('save').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([serialize()], { type: 'application/json' })); a.download = 'part.cadlite.json'; a.click(); };
 $('open').onclick = () => $('file').click();
