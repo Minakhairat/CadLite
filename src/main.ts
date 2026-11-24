@@ -177,8 +177,10 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.75)); const dl = new THREE.Directio
 const gridH = new THREE.GridHelper(200, 20, 0x7f93b5, 0xaebfda); gridH.rotateX(Math.PI / 2); scene.add(gridH);
 const group = new THREE.Group(); scene.add(group);
 let shown: KBody[] | null = null; // kernel result (Join/Cut/Intersect); null = draw each feature
-const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new');
-const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir });
+const isMod = (k: string) => k === 'fillet' || k === 'chamfer' || k === 'shell';
+const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' || isMod(f.kind));
+const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir));
+const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges });
 /** Try a new feature list. Computes the solid when Join/Cut/Intersect is involved. Returns false (and a message) when it fails. */
 async function applyFeatures(next: Feature[]): Promise<boolean> {
   let bodies: KBody[] | null = null;
@@ -238,6 +240,7 @@ function refreshButtons() {
   const model = mode === 'model';
   ($('extrude') as HTMLButtonElement).disabled = !model || !pending; ($('revolve') as HTMLButtonElement).disabled = !model || !pending;
   ($('editft') as HTMLButtonElement).disabled = !model || sel === null; ($('delft') as HTMLButtonElement).disabled = !model || sel === null;
+  for (const id of ['fil', 'cha', 'she']) ($(id) as HTMLButtonElement).disabled = !model || !features.length;
   for (const id of ['stl', 'obj', 'step']) ($(id) as HTMLButtonElement).disabled = !features.length; ($('startsk') as HTMLButtonElement).disabled = !model;
   document.querySelectorAll<HTMLButtonElement>('[data-proxy]').forEach((b) => (b.disabled = ($(b.dataset.proxy!) as HTMLButtonElement).disabled));
   document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
@@ -251,7 +254,7 @@ function tree() {
   };
   node('Part1', 0, 'p'); node(`Solid Bodies(${shown ? shown.length : features.length})`, 1, ''); node('View: Master', 1, ''); node('Origin', 1, 'o'); node('XY Plane', 2, ''); node('X Axis', 2, ''); node('Y Axis', 2, '');
   features.forEach((f, i) => {
-    node(`${f.kind === 'extrude' ? 'Extrusion' : 'Revolution'}${i + 1}  (${f.kind === 'extrude' ? f.depth + ' mm' : '360°'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
+    if (isMod(f.kind)) { node(`${f.kind[0].toUpperCase()}${f.kind.slice(1)}${i + 1}  (${f.depth} mm, ${f.edges ?? 'all'} ${f.kind === 'shell' ? 'open face' : 'edges'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, undefined, sel === i); return; }
     node(`Sketch${i + 1}`, 2, 's', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
   });
   node('End of Part', 1, 'e');
@@ -288,7 +291,7 @@ function startSketch(from?: Entity[]) { sketch = from ? clone(from) : pending ? 
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
 $('ppxy').onclick = () => { $('pp').classList.remove('show'); startSketch(); };
 $('ppx').onclick = () => $('pp').classList.remove('show');
-function editFeature(i: number) { editing = i; sel = i; startSketch(features[i].sketch); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
+function editFeature(i: number) { if (isMod(features[i].kind)) { msg('Fillet/Chamfer/Shell: delete this feature and add it again to change it.'); return; } editing = i; sel = i; startSketch(features[i].sketch); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) pending = null; editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
 $('clear').onclick = () => { sketch = []; polyPts = []; draw(); props(); };
@@ -296,7 +299,7 @@ $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
   try { const rl = resolveLoops(sketch); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
-  const kind = editing !== null ? features[editing].kind : null;
+  const kind = editing !== null ? (features[editing].kind as 'extrude' | 'revolve') : null;
   pending = clone(sketch); sketch = []; setMode('model');
   if (editing !== null && kind) openDlg(kind, features[editing].depth, features[editing].op, features[editing].dir); else msg('Sketch finished. Choose Extrude or Revolve.');
 };
@@ -340,6 +343,25 @@ $('dok').onclick = async () => {
     if (mobile()) $('browser').classList.remove('open');
   } catch (err) { msg((err as Error).message); }
 };
+let modKind: 'fillet' | 'chamfer' | 'shell' | null = null;
+function openMod(k: 'fillet' | 'chamfer' | 'shell') {
+  if (!features.length) { msg('Create a solid first.'); return; }
+  modKind = k; $('mdlgt').textContent = k[0].toUpperCase() + k.slice(1);
+  $('mlabel').textContent = k === 'fillet' ? 'Radius (mm)' : k === 'chamfer' ? 'Distance (mm)' : 'Wall thickness (mm)';
+  $('mdlgmsg').textContent = k === 'shell' ? 'Hollows every solid inward. Edges choice picks which face is left open.' : 'Applies to every solid. Edges choice picks which edges.';
+  $('mdlg').classList.add('show');
+}
+$('fil').onclick = () => openMod('fillet'); $('cha').onclick = () => openMod('chamfer'); $('she').onclick = () => openMod('shell');
+$('mcancel').onclick = () => { $('mdlg').classList.remove('show'); modKind = null; };
+$('mok').onclick = async () => {
+  if (!modKind) return;
+  const size = parseFloat(($('msize') as HTMLInputElement).value); const edges = ($('medges') as HTMLSelectElement).value as Feature['edges'];
+  if (!(size > 0)) { msg('Size must be greater than 0'); return; }
+  const f: Feature = { kind: modKind, depth: size, sketch: [], geo: new THREE.BufferGeometry(), edges };
+  if (!(await applyFeatures([...features, f]))) return;
+  sel = features.length - 1; $('mdlg').classList.remove('show'); const k = modKind; modKind = null; rebuild(); tree(); refreshButtons();
+  msg(`${k[0].toUpperCase() + k.slice(1)} applied. Total volume: ${(shown ?? []).reduce((s, x) => s + volume(x.geo), 0).toFixed(1)} mm³`);
+};
 $('delft').onclick = async () => { if (sel === null) return; const i = sel; const next = features.filter((_, k) => k !== i); if (!(await applyFeatures(next))) return; sel = null; rebuild(); tree(); refreshButtons(); };
 $('undo').onclick = async () => { if (!features.length) return; if (!(await applyFeatures(features.slice(0, -1)))) return; sel = null; rebuild(); tree(); refreshButtons(); };
 const num = (id: string) => parseFloat(($(id) as HTMLInputElement).value);
@@ -355,11 +377,11 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
 // ---------- save / open / export ----------
-const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [] });
+const serialize = () => JSON.stringify({ version: 1, features: features.map((f) => ({ kind: f.kind, depth: f.depth, sketch: f.sketch, ...(f.edges ? { edges: f.edges } : {}), ...(f.op && f.op !== 'new' ? { op: f.op } : {}), ...(f.dir && f.dir !== 'normal' ? { dir: f.dir } : {}) })), sketch: pending ?? [] });
 async function load(text: string) {
   const d = JSON.parse(text);
   features.forEach((f) => f.geo.dispose());
-  const loaded: Feature[] = d.features.map((f: any) => ({ ...f, geo: buildGeometry(f.kind, f.sketch, f.depth, f.dir) }));
+  const loaded: Feature[] = d.features.map((f: any) => ({ ...f, sketch: f.sketch ?? [], geo: geoOf(f) }));
   features = []; shown = null; if (!(await applyFeatures(loaded))) { features = loaded; }
   pending = d.sketch?.length ? d.sketch : null; sketch = []; sel = null; editing = null; setMode('model'); rebuild(); setView('home'); tree(); refreshButtons(); const ov = shown ? null : overlapPair(); msg(ov ? `Opened with a warning: features ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). They are separate meshes, not a joined part; export is blocked until fixed.` : `Opened: ${features.length} feature(s).`);
 }
