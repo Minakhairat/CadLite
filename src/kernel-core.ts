@@ -35,6 +35,18 @@ export function extrudeSolid(R: R, sketch: Entity[], h: number, z0: number): Rep
   return solid;
 }
 
+/** Revolve the first outline 360 degrees about the Z axis (profile x = radius, sketch y = height), matching the display. Profile must lie at x >= 0. */
+export function revolveSolid(R: R, sketch: Entity[]): Replicad.Shape3D {
+  const e = sketch.filter(valid)[0]; if (!e) throw new Error('Draw a closed shape first');
+  if (outline(e).some((p) => p.x < -1e-9)) throw new Error('For revolve, keep the shape on the right of the vertical axis (x >= 0)');
+  let sk: any;
+  if (e.t === 'circle') sk = R.drawCircle(e.r).translate(e.c.x, e.c.y);
+  else if (e.t === 'rect') sk = R.draw([e.a.x, e.a.y]).lineTo([e.b.x, e.a.y]).lineTo([e.b.x, e.b.y]).lineTo([e.a.x, e.b.y]).close();
+  else if (e.t === 'poly' && e.segs?.length) { let d: any = R.draw([e.segs[0].a.x, e.segs[0].a.y]); for (const g of e.segs) d = g.m ? d.threePointsArcTo([g.b.x, g.b.y], [g.m.x, g.m.y]) : d.lineTo([g.b.x, g.b.y]); sk = d.close(); }
+  else { const pts = outline(e); let d: any = R.draw([pts[0].x, pts[0].y]); for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i].x, pts[i].y]); sk = d.close(); }
+  return sk.sketchOnPlane('XZ').revolve([0, 0, 1]) as Replicad.Shape3D;
+}
+
 const span = (depth: number, dir: Dir | undefined): [number, number] => (dir === 'flip' ? [-depth, depth] : dir === 'sym' ? [-depth / 2, depth] : [0, depth]);
 const bb = (s: Replicad.Shape3D) => s.boundingBox.bounds as [number[], number[]];
 const touches = (a: Replicad.Shape3D, b: Replicad.Shape3D, t = 1e-6) => { const A = bb(a), B = bb(b); return [0, 1, 2].every((k) => A[0][k] <= B[1][k] + t && B[0][k] <= A[1][k] + t); };
@@ -62,6 +74,7 @@ export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
       bodies = bodies.map((b) => modify(b, f, nm));
       return;
     }
+    if (f.kind === 'revolve') { if ((f.op ?? 'new') !== 'new') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.'); bodies.push(revolveSolid(R, f.sketch)); return; }
     if (f.kind !== 'extrude') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.');
     const [z0, h] = span(f.depth, f.dir); const s = extrudeSolid(R, f.sketch, h, z0); const op = f.op ?? 'new'; const n = `Feature ${i + 1}`;
     if (op === 'new') { bodies.push(s); return; }
