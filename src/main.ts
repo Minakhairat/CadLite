@@ -6,7 +6,7 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE } from './sketch-ops';
+import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
 import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -172,6 +172,23 @@ sk.addEventListener('pointerdown', (e) => {
     const c: Con = { k: 'tanla', l: a2 as unknown as L, m: l2 as unknown as L }; cons.push(c); msg('Solving...');
     solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Tangent applied: the line and the arc end points stayed; the arc bulge was adjusted.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
+  }
+  if (tool === 'cconc' || tool === 'ceqr') {
+    let arcH: Extract<Entity, { t: 'arc' }> | null = null, bdA = (10 * devicePixelRatio) / cam.s; for (const e of sketch) if (e.t === 'arc') { const d = distTo(e, pr); if (d < bdA) { bdA = d; arcH = e; } }
+    const cirH = ringHit(pr);
+    if ((cirPick && cirPick.t === 'arc') || (!cirPick && arcH && !cirH)) {
+      const hit: Entity | null = arcH ?? cirH; if (!hit) { msg('Click an arc or a circle (click its outline).'); return; }
+      if (!cirPick || !sketch.includes(cirPick)) { cirPick = hit; msg('Now click the reference arc or circle. It stays; the first arc is adjusted once (not kept as a constraint).'); return; }
+      if (hit === cirPick) { msg('Pick a different second shape.'); return; }
+      const first = cirPick as Extract<Entity, { t: 'arc' }>; cirPick = null;
+      const ref = hit.t === 'arc' ? circle3(hit.a, hit.b, hit.m) : hit.t === 'circle' ? { c: hit.c, r: hit.r } : null; if (!ref) { msg('That reference shape has no usable centre. Nothing changed.'); return; }
+      if (usedByCon(first)) { msg('The first arc has constraints or dimensions, so it cannot be changed in place. Nothing changed.'); return; }
+      const shared = sketch.some((o) => o !== first && (o.t === 'line' || o.t === 'arc') && [first.a, first.b].some((q) => [o.a, o.b].some((w2) => Math.hypot(w2.x - q.x, w2.y - q.y) < 1e-6)));
+      if (shared) { msg('The arc shares an end point with another shape, which would not follow. Nothing changed.'); return; }
+      const nu = tool === 'cconc' ? arcConcentric(first, ref.c) : arcEqualRadius(first, ref.r) as Entity | null;
+      if (!nu || nu.t !== 'arc') { msg('This arc cannot be adjusted. Nothing changed.'); return; }
+      first.a = nu.a; first.b = nu.b; first.m = nu.m; ck(); props(); draw(); msg(tool === 'cconc' ? 'Arc moved so its centre matches the reference. Applied once, not kept as a constraint.' : 'Arc radius set to the reference radius about its own centre. Applied once, not kept as a constraint.'); return;
+    }
   }
   if (tool === 'ctan' || tool === 'cconc' || tool === 'ceqr') {
     const cir = ringHit(pr); let ln: Extract<Entity, { t: 'line' }> | null = null;
