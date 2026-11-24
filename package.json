@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx src/geometry.test.ts && tsx src/kernel-core.test.ts",
+    "test": "tsx src/geometry.test.ts && tsx src/kernel-core.test.ts && tsx src/solver-core.test.ts",
     "desktop": "tauri dev",
     "desktop:build": "tauri build",
     "cap:sync": "npm run build && cap sync",
@@ -16,6 +16,7 @@
     "icons": "tauri icon assets/icon.svg"
   },
   "dependencies": {
+    "@salusoft89/planegcs": "^1.3.0",
     "replicad": "^1.2.1",
     "replicad-opencascadejs": "^1.2.1",
     "three": "^0.170.0"
