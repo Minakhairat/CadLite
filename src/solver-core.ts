@@ -1,7 +1,7 @@
 // 2D geometric constraints on sketch lines, solved with planegcs (FreeCAD's solver). The wrapper is injected so Node tests and the browser share this code.
 import type { P } from './geometry';
 export type L = { a: P; b: P };
-export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len'; l: L; m?: L; v?: number };
+export type Con = { k: 'h' | 'v' | 'par' | 'perp' | 'eq' | 'len' | 'fix'; l: L; m?: L; v?: number };
 type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
 
 /** Solve the constraints over all lines. Shared end points (same coordinates) stay joined. Writes the solution back into the lines. Throws when the constraints cannot all be met. */
@@ -13,6 +13,7 @@ export function solveLines(w: W, lines: L[], cons: Con[], tol = 1e-6): void {
   cons.forEach((c, n) => {
     const i = lines.indexOf(c.l), j = c.m ? lines.indexOf(c.m) : -1; if (i < 0 || (c.m && j < 0)) return;
     const id = `c${n}`;
+    if (c.k === 'fix') { for (const q of ends[i]) prims[q].fixed = true; return; }
     if (c.k === 'len') prims.push({ id, type: 'p2p_distance', p1_id: `p${ends[i][0]}`, p2_id: `p${ends[i][1]}`, distance: c.v });
     else if (c.k === 'h') prims.push({ id, type: 'horizontal_l', l_id: `l${i}` });
     else if (c.k === 'v') prims.push({ id, type: 'vertical_l', l_id: `l${i}` });
