@@ -397,16 +397,18 @@ function overlapPair(): [number, number] | null {
 }
 function download(name: string, text: string, type: string) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); }
 async function export3d(ext: 'stl' | 'obj' | 'step') {
-  if (!features.length) return;
+  if (!features.length) return; let exactStep = false;
   const ov = shown ? null : overlapPair();
   if (ov) { msg(`Cannot export: Extrusion/Revolution ${ov[0] + 1} and ${ov[1] + 1} overlap (bounding boxes). Use Join/Cut/Intersect in the Extrude dialog, or edit one.`); return; }
   try {
     if (ext === 'step') {
-      if (shown) { const blob = await stepOf(shown); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'part.step'; a.click(); }
+      let kb: KBody[] | null = shown;
+      if (!kb && features.every((f) => f.kind === 'extrude')) { msg('Building the exact solid for STEP...'); try { kb = await computeBodies(features.map(specOf)); } catch { kb = null; } }
+      if (kb) { exactStep = true; const blob = await stepOf(kb); if (kb !== shown) kb.forEach((b) => b.geo.dispose()); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'part.step'; a.click(); }
       else download('part.step', toSTEP(features), 'application/step');
     } else if (ext === 'obj') download('part.obj', toOBJ(shown ? shown.map((b) => ({ kind: 'extrude' as const, depth: 0, sketch: [], geo: b.geo })) : features), 'text/plain');
     else { const geos = shown ? shown.map((b) => b.geo.clone()) : features.map((f) => { const g = f.geo.clone(); if (f.kind === 'revolve') g.rotateX(Math.PI / 2); return g; }); download('part.stl', toSTL(geos), 'model/stl'); }
-    msg(`Exported part.${ext} (mm)${shown && ext === 'step' ? ', exact solid from the OpenCascade kernel' : ''}.`);
+    msg(`Exported part.${ext} (mm)${exactStep ? ', exact solid from the OpenCascade kernel (true arcs and circles)' : ext === 'step' ? ', faceted solid (Revolve is not on the kernel yet)' : ''}.`);
   } catch (e) { msg((e as Error).message); }
 }
 $('stl').onclick = () => export3d('stl'); $('obj').onclick = () => export3d('obj'); $('step').onclick = () => export3d('step');
