@@ -4,7 +4,9 @@ export type P = { x: number; y: number };
 export type Entity =
   | { t: 'rect'; a: P; b: P }
   | { t: 'circle'; c: P; r: number }
-  | { t: 'poly'; pts: P[] };
+  | { t: 'poly'; pts: P[] }
+  | { t: 'line'; a: P; b: P }
+  | { t: 'arc'; a: P; b: P; m: P }; // arc: start a, end b, passing through m
 export type Feature = { kind: 'extrude' | 'revolve'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
@@ -16,7 +18,50 @@ export function outline(e: Entity): P[] {
     return [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
   }
   if (e.t === 'circle') return Array.from({ length: 64 }, (_, i) => ({ x: e.c.x + e.r * Math.cos((i / 64) * 2 * Math.PI), y: e.c.y + e.r * Math.sin((i / 64) * 2 * Math.PI) }));
+  if (e.t === 'line') return [e.a, e.b];
+  if (e.t === 'arc') return arcPoints(e.a, e.b, e.m);
   return e.pts;
+}
+/** Circle through three points, or null when collinear. */
+export function circle3(a: P, b: P, m: P): { c: P; r: number } | null {
+  const d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y));
+  if (Math.abs(d) < 1e-9) return null;
+  const a2 = a.x * a.x + a.y * a.y, m2 = m.x * m.x + m.y * m.y, b2 = b.x * b.x + b.y * b.y;
+  const c = { x: (a2 * (m.y - b.y) + m2 * (b.y - a.y) + b2 * (a.y - m.y)) / d, y: (a2 * (b.x - m.x) + m2 * (a.x - b.x) + b2 * (m.x - a.x)) / d };
+  return { c, r: Math.hypot(a.x - c.x, a.y - c.y) };
+}
+/** Points along the arc a -> m -> b (endpoints exact). */
+export function arcPoints(a: P, b: P, m: P, seg = 48): P[] {
+  const k = circle3(a, b, m); if (!k) return [a, b];
+  const ang = (p: P) => Math.atan2(p.y - k.c.y, p.x - k.c.x);
+  const a0 = ang(a), am = ang(m), a1 = ang(b);
+  const tau = 2 * Math.PI; const norm = (x: number) => ((x % tau) + tau) % tau;
+  const ccw = norm(am - a0) <= norm(a1 - a0); // is m reached before b going counter-clockwise
+  const sweep = ccw ? norm(a1 - a0) : -norm(a0 - a1);
+  const n = Math.max(2, Math.ceil((Math.abs(sweep) / tau) * seg));
+  const pts: P[] = [a];
+  for (let i = 1; i < n; i++) { const t = a0 + (sweep * i) / n; pts.push({ x: k.c.x + k.r * Math.cos(t), y: k.c.y + k.r * Math.sin(t) }); }
+  pts.push(b); return pts;
+}
+const isSeg = (e: Entity) => e.t === 'line' || e.t === 'arc';
+/** Join lines/arcs end to end into closed polygon entities. Throws if any chain stays open. */
+export function resolveLoops(sketch: Entity[], tol = 1e-6): Entity[] {
+  const rest = sketch.filter(isSeg).map((e) => outline(e)); const out = sketch.filter((e) => !isSeg(e));
+  const same = (p: P, q: P) => Math.hypot(p.x - q.x, p.y - q.y) <= tol;
+  while (rest.length) {
+    let chain = rest.shift()!.slice();
+    for (let guard = 0; guard <= sketch.length; guard++) {
+      if (chain.length > 2 && same(chain[0], chain[chain.length - 1])) break;
+      const end = chain[chain.length - 1];
+      const i = rest.findIndex((s) => same(s[0], end) || same(s[s.length - 1], end));
+      if (i < 0) throw new Error('Open profile: lines and arcs must form a closed loop (end points must meet).');
+      const s = rest.splice(i, 1)[0]; if (!same(s[0], end)) s.reverse();
+      chain = chain.concat(s.slice(1));
+    }
+    if (!(chain.length > 2 && same(chain[0], chain[chain.length - 1]))) throw new Error('Open profile: lines and arcs must form a closed loop (end points must meet).');
+    chain.pop(); out.push({ t: 'poly', pts: chain });
+  }
+  return out;
 }
 export function area(pts: P[]) { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += a.x * b.y - b.x * a.y; } return s / 2; }
 export function inside(p: P, poly: P[]) {
@@ -27,7 +72,7 @@ export function inside(p: P, poly: P[]) {
   }
   return c;
 }
-const valid = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
+const valid = (e: Entity) => (e.t === 'line' || e.t === 'arc' ? false : e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.pts.length >= 3 && Math.abs(area(e.pts)) > 1e-6);
 
 /** Build shapes: closed loops that sit inside another loop become holes. */
 export function buildShapes(sketch: Entity[]): THREE.Shape[] {
