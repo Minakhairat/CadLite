@@ -61,6 +61,11 @@ function applyArcRels() {
   for (const c of cons) { const k = c.k as string; if (k !== 'aconc' && k !== 'aeqr') continue; const arc = c.l as unknown as Entity, ref = c.m as unknown as Entity; if (!sketch.includes(arc) || !sketch.includes(ref) || arc.t !== 'arc') continue;
     const rc = ref.t === 'arc' ? circle3(ref.a, ref.b, ref.m) : ref.t === 'circle' ? { c: ref.c, r: ref.r } : null; if (!rc) throw new Error('A reference of an arc constraint has no usable centre.');
     const nu = k === 'aconc' ? arcConcentric(arc, rc.c) : arcEqualRadius(arc, rc.r); if (!nu || nu.t !== 'arc') throw new Error('An arc constraint cannot be kept for this size.'); arc.a = nu.a; arc.b = nu.b; arc.m = nu.m; }
+  // Check every relation on the result: two constraints on one arc can disagree, and the last transform must not hide that.
+  for (const c of cons) { const k = c.k as string; if (k !== 'aconc' && k !== 'aeqr') continue; const arc = c.l as unknown as Entity, ref = c.m as unknown as Entity; if (!sketch.includes(arc) || !sketch.includes(ref) || arc.t !== 'arc') continue;
+    const rc = ref.t === 'arc' ? circle3(ref.a, ref.b, ref.m) : ref.t === 'circle' ? { c: ref.c, r: ref.r } : null, ac = circle3(arc.a, arc.b, arc.m); if (!rc || !ac) throw new Error('An arc constraint cannot be checked.');
+    const bad = k === 'aconc' ? Math.hypot(ac.c.x - rc.c.x, ac.c.y - rc.c.y) > 1e-6 * Math.max(1, rc.r) : Math.abs(ac.r - rc.r) > 1e-6 * Math.max(1, rc.r);
+    if (bad) throw new Error('These arc constraints conflict: they cannot all be true for the same arc. Nothing was kept.'); }
 }
 async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); }
 async function solveAll0(lines: L[], all: Con[]): Promise<void> {
