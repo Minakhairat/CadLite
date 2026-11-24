@@ -139,12 +139,12 @@ function tree() {
     const i = document.createElement('i'); i.className = cls; n.append(i, document.createTextNode(label));
     if (click) n.onclick = click; if (dbl) n.ondblclick = dbl; t.append(n);
   };
-  node('Part1', 0, ''); node(`Solid Bodies(${features.length})`, 1, ''); node('View: Master', 1, ''); node('Origin', 1, ''); node('XY Plane', 2, ''); node('X Axis', 2, ''); node('Y Axis', 2, '');
+  node('Part1', 0, 'p'); node(`Solid Bodies(${features.length})`, 1, ''); node('View: Master', 1, ''); node('Origin', 1, 'o'); node('XY Plane', 2, ''); node('X Axis', 2, ''); node('Y Axis', 2, '');
   features.forEach((f, i) => {
-    node(`Sketch${i + 1}`, 1, 's', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
     node(`${f.kind === 'extrude' ? 'Extrusion' : 'Revolution'}${i + 1}  (${f.kind === 'extrude' ? f.depth + ' mm' : '360°'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
+    node(`Sketch${i + 1}`, 2, 's', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
   });
-  node('End of Part', 1, '');
+  node('End of Part', 1, 'e');
   if (pending) node('Sketch (not used yet)', 1, 's');
   if (mode === 'sketch') node(editing !== null ? `Editing Sketch${editing + 1}` : 'Sketch in progress', 1, 's', undefined, undefined, true);
 }
