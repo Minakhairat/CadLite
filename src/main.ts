@@ -292,7 +292,9 @@ const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' 
 const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any; plane?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir, f.plane));
 const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges, plane: isMod(f.kind) ? undefined : f.plane });
 /** Try a new feature list. Computes the solid when Join/Cut/Intersect is involved. Returns false (and a message) when it fails. */
+const mixedPlaneMsg = (fs: Feature[]) => (fs.some((f) => f.plane && f.plane !== 'XY') && fs.some((f) => isMod(f.kind)) ? 'Refused: Hole, Fillet, Chamfer and Shell are not verified on parts that have XZ or YZ features yet (they work in world axes). The model was not changed.' : '');
 async function applyFeatures(next: Feature[]): Promise<boolean> {
+  { const mm = mixedPlaneMsg(next); if (mm) { msg(mm); return false; } }
   let bodies: KBody[] | null = null;
   if (needsKernel(next)) {
     msg('Computing solid (the first time this loads the geometry kernel)...');
@@ -604,6 +606,7 @@ async function load(text: string) {
   let d: any;
   try { d = JSON.parse(text); if (!d || !Array.isArray(d.features)) throw new Error('bad'); } catch { msg('Open failed: this is not a valid MK CAD file. The current model was kept.'); return; }
   const loaded: Feature[] = d.features.map((f: any) => ({ ...f, sketch: f.sketch ?? [], geo: geoOf(f) }));
+  { const mm = mixedPlaneMsg(loaded); if (mm) { msg('Open failed. ' + mm.replace('The model was not changed.', 'The current model was kept.')); return; } }
   const oldFeatures = features, oldShown = shown;
   features = []; shown = null;
   if (needsKernel(loaded)) {
