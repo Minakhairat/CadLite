@@ -1,12 +1,9 @@
 node_modules
 dist
-android/local.properties
-android/.gradle
-android/build
-android/app/build
-android/capacitor-cordova-android-plugins/build
+android
+ios
 *.keystore
 *.jks
 src-tauri/target
 src-tauri/gen
-ios/App/Pods
+src-tauri/icons
