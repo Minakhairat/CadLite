@@ -131,6 +131,7 @@ function refreshButtons() {
   ($('extrude') as HTMLButtonElement).disabled = !model || !pending; ($('revolve') as HTMLButtonElement).disabled = !model || !pending;
   ($('editft') as HTMLButtonElement).disabled = !model || sel === null; ($('delft') as HTMLButtonElement).disabled = !model || sel === null;
   for (const id of ['stl', 'obj', 'step']) ($(id) as HTMLButtonElement).disabled = !features.length; ($('startsk') as HTMLButtonElement).disabled = !model;
+  document.querySelectorAll<HTMLButtonElement>('[data-proxy]').forEach((b) => (b.disabled = ($(b.dataset.proxy!) as HTMLButtonElement).disabled));
   document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
 }
 function tree() {
