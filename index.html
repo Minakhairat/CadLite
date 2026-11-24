@@ -50,12 +50,21 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
 .sm{display:flex;align-items:center;gap:4px;height:22px;padding:0 4px;white-space:nowrap;text-align:left}.sm svg{width:16px;height:16px;flex:none}
 .smgrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3,22px);gap:0 4px;align-content:center;padding:0 2px}
 .pend:disabled{opacity:.55}.big.pend{font-size:11px;text-align:center;max-width:64px}.pendtab{color:#55606f}.pendmsg{padding:14px 12px;color:#556;line-height:1.5}
-#legend{background:#fff6d6;border-bottom:1px solid #e3d08a;color:#6b5a1d;padding:2px 8px;font-size:11px;white-space:nowrap;overflow-x:auto}
+#legend{background:#fff6d6;border-bottom:1px solid #e3d08a;color:#6b5a1d;padding:2px 8px;font-size:11px;line-height:1.35}
 .pend{position:relative}.pend::after{content:"";position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#e0a526}
 .sm{padding-right:10px}.sm.pend::after{top:50%;right:2px;margin-top:-3px}
 #title *{white-space:nowrap}@media(max-width:800px){#title .srch{display:none}}
 #title .srch{margin-left:12px;width:240px;max-width:30vw;padding:2px 6px;border:1px solid #556;background:#3a4252;color:#aab;border-radius:2px;font-size:11px}
 .node i.o{background:#f2d27a;border-color:#a8832a}.node i.e{background:#d33;border-color:#a22;border-radius:50%}.node i.p{background:#5b8fd6;border-color:#2c5da0}
+#vc{display:block;background:none!important;border:0!important;padding:0!important;width:96px;height:96px;right:14px!important;top:10px!important}
+#vc .cube{position:relative;width:70px;height:70px;margin:8px 0 0 10px}
+#vc .cube button{position:absolute;font-size:9px;font-weight:700;color:#556;border:1px solid #8a93a5;background:#f3f5f9;padding:0;min-height:0;letter-spacing:.5px}
+#vc .ft{left:14px;top:0;width:48px;height:22px;transform:skewX(-40deg) ;background:#fff}
+#vc .ff{left:0;top:23px;width:48px;height:42px;background:#e6eaf1}
+#vc .fr{left:49px;top:23px;width:22px;height:42px;background:#d3d9e4;font-size:7px}
+#vc .home{position:absolute;left:-2px;top:-2px;width:20px;height:20px;border-radius:10px;background:#fff;border:1px solid #8a93a5;font-size:12px;min-height:0;padding:0}
+#vc button:hover{background:#cfe1fb!important}
+#nav{top:120px!important;right:8px!important;border-radius:6px!important;padding:2px!important}#nav button{width:28px;min-height:28px!important;font-size:14px!important;padding:0!important;border-radius:4px!important}
 </style></head><body>
 <div id="title"><b>MK Cad</b><button id="save" title="Save to a .cadlite.json file">Save</button><button id="open">Open</button><button id="undo" title="Undo last feature">Undo feature</button><input id="file" type="file" accept=".json" hidden/><input class="srch" disabled placeholder="Search Help &amp; Commands (in development)" title="In development (قيد التطوير)"/><span class="doc" id="doc">Part1.cadlite.json (mm)</span></div>
 <div id="tabs"><button class="pendtab" data-tab="x-File">File</button><button class="act" data-tab="model">3D Model</button><button class="ctx" data-tab="sketch" id="tabsk" style="display:none">Sketch</button><button class="pendtab" data-tab="x-Annotate">Annotate</button><button class="pendtab" data-tab="x-Inspect">Inspect</button><button class="pendtab" data-tab="x-Tools">Tools</button><button class="pendtab" data-tab="x-CAM">CAM</button><button class="pendtab" data-tab="x-Manage">Manage</button><button data-tab="view">View</button><button class="pendtab" data-tab="x-Environments">Environments</button><button class="pendtab" data-tab="x-GetStarted">Get Started</button><button class="pendtab" data-tab="x-Collaborate">Collaborate</button></div>
@@ -84,8 +93,8 @@ canvas{position:absolute;inset:0 0 22px 0;width:100%;height:calc(100% - 22px);di
 <div id="body">
  <div id="browser"><h4>Model</h4><div id="tree"></div><div id="props"></div></div>
  <div id="gfx"><canvas id="v3"></canvas><canvas id="sk" style="display:none"></canvas>
-  <div id="vc"><button data-view="top">Top</button><button data-view="home">Home</button><button data-view="front">Front</button><button data-view="right">Right</button><button data-view="all">All</button><span></span></div>
-  <div id="nav"><button data-view="all" title="Zoom All">Zoom All</button></div>
+  <div id="vc"><div class="cube"><button data-view="top" class="ft">TOP</button><button data-view="front" class="ff">FRONT</button><button data-view="right" class="fr">RIGHT</button></div><button class="home" data-view="home" title="Home view">&#8962;</button></div>
+  <div id="nav"><button data-view="all" title="Zoom All">&#9635;</button><button class="pend" disabled title="Pan: In development (قيد التطوير)">&#9995;</button><button class="pend" disabled title="Zoom: In development (قيد التطوير)">&#128269;</button><button class="pend" disabled title="Orbit: In development (قيد التطوير)">&#8635;</button><button class="pend" disabled title="Look At: In development (قيد التطوير)">&#128065;</button></div>
   <button id="fin2">&#10003; Finish Sketch</button>
   <div id="doctabs"><span>Part1</span></div>
   <div id="dlg"><h5 id="dlgt">Extrude</h5><div class="in"><label>Distance (mm)<input id="depth" type="number" value="20" min="0.01" step="any"/></label><div id="dlgmsg" style="color:#555"></div></div><div class="ok"><button id="dok">OK</button><button id="dcancel">Cancel</button></div></div>
