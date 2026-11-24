@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 
 export type P = { x: number; y: number };
+export type Seg = { a: P; b: P; m?: P }; // straight segment, or arc a -> m -> b
 export type Entity =
   | { t: 'rect'; a: P; b: P }
   | { t: 'circle'; c: P; r: number }
-  | { t: 'poly'; pts: P[] }
+  | { t: 'poly'; pts: P[]; segs?: Seg[] }
   | { t: 'line'; a: P; b: P }
   | { t: 'arc'; a: P; b: P; m: P }; // arc: start a, end b, passing through m
 export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym' };
@@ -46,20 +47,24 @@ export function arcPoints(a: P, b: P, m: P, seg = 48): P[] {
 const isSeg = (e: Entity) => e.t === 'line' || e.t === 'arc';
 /** Join lines/arcs end to end into closed polygon entities. Throws if any chain stays open. */
 export function resolveLoops(sketch: Entity[], tol = 1e-6): Entity[] {
-  const rest = sketch.filter(isSeg).map((e) => outline(e)); const out = sketch.filter((e) => !isSeg(e));
+  type S = { pts: P[]; seg: Seg };
+  const toS = (e: Entity): S => (e.t === 'arc' ? { pts: outline(e), seg: { a: e.a, b: e.b, m: e.m } } : { pts: outline(e), seg: { a: (e as any).a, b: (e as any).b } });
+  const rest = sketch.filter(isSeg).map(toS); const out = sketch.filter((e) => !isSeg(e));
   const same = (p: P, q: P) => Math.hypot(p.x - q.x, p.y - q.y) <= tol;
+  const open = () => new Error('Open profile: lines and arcs must form a closed loop (end points must meet).');
   while (rest.length) {
-    let chain = rest.shift()!.slice();
+    const first = rest.shift()!; let chain = first.pts.slice(); const segs: Seg[] = [first.seg];
     for (let guard = 0; guard <= sketch.length; guard++) {
       if (chain.length > 2 && same(chain[0], chain[chain.length - 1])) break;
       const end = chain[chain.length - 1];
-      const i = rest.findIndex((s) => same(s[0], end) || same(s[s.length - 1], end));
-      if (i < 0) throw new Error('Open profile: lines and arcs must form a closed loop (end points must meet).');
-      const s = rest.splice(i, 1)[0]; if (!same(s[0], end)) s.reverse();
-      chain = chain.concat(s.slice(1));
+      const i = rest.findIndex((r) => same(r.pts[0], end) || same(r.pts[r.pts.length - 1], end));
+      if (i < 0) throw open();
+      const r = rest.splice(i, 1)[0]; let sg = r.seg;
+      if (!same(r.pts[0], end)) { r.pts.reverse(); sg = { a: sg.b, b: sg.a, m: sg.m }; }
+      chain = chain.concat(r.pts.slice(1)); segs.push(sg);
     }
-    if (!(chain.length > 2 && same(chain[0], chain[chain.length - 1]))) throw new Error('Open profile: lines and arcs must form a closed loop (end points must meet).');
-    chain.pop(); out.push({ t: 'poly', pts: chain });
+    if (!(chain.length > 2 && same(chain[0], chain[chain.length - 1]))) throw open();
+    chain.pop(); out.push({ t: 'poly', pts: chain, ...(segs.some((x) => x.m) ? { segs } : {}) });
   }
   return out;
 }
