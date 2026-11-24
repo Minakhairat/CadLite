@@ -54,7 +54,7 @@ const vol = (R: R, s: Replicad.Shape3D) => R.measureVolume(s);
 
 /** Apply features in order. Returns the resulting solid bodies. */
 export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
-  measure = (s) => R.measureVolume(s);
+  measure = (s) => R.measureVolume(s); R_area = (s) => (R as any).measureArea(s);
   let bodies: Replicad.Shape3D[] = [];
   feats.forEach((f, i) => {
     if (f.kind === 'hole') {
@@ -99,6 +99,7 @@ export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
 }
 
 let measure: (s: Replicad.Shape3D) => number = () => 0;
+let R_area: (s: Replicad.Shape3D) => number = () => 0;
 const T = 1e-6;
 /** Fillet / chamfer / shell one body. Edge sets: all edges, vertical (Z) edges, or the edges on the top or bottom face plane. */
 function modify(b: Replicad.Shape3D, f: Spec, nm: string): Replicad.Shape3D {
@@ -109,6 +110,7 @@ function modify(b: Replicad.Shape3D, f: Spec, nm: string): Replicad.Shape3D {
     if (f.kind === 'shell') return (b as any).shell(f.depth, (fc: any) => fc.inPlane('XY', k === 'bottom' ? lo[2] : hi[2])) as Replicad.Shape3D;
     return (f.kind === 'fillet' ? (b as any).fillet(f.depth, sel) : (b as any).chamfer(f.depth, sel)) as Replicad.Shape3D;
   } catch (e) { throw new Error(`${nm} failed: the size is too large for this shape, or the selected edges do not exist.`); } })();
+  if (f.kind === 'shell' && measure(out) > R_area(b) * f.depth * 1.02) throw new Error('Shell produced an invalid solid on this shape (the kernel could not hollow it correctly), so it was rejected. Try a different size, or shell before adding other features.');
   if (!(Math.abs(measure(out) - v0) > 1e-6)) throw new Error(`${nm} had no effect on this shape (the geometry kernel could not apply it here). Try different edges or size.`);
   return out;
 }
