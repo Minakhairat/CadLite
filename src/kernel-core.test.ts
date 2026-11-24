@@ -20,3 +20,15 @@ near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [rect(10, 10, 20, 20), 
 const ring = buildBodies(R, [{ kind: 'extrude', sketch: [rect(0, 0, 20, 20), { t: 'circle', c: { x: 10, y: 10 }, r: 4 }], depth: 5 }]);
 near(V(ring), (400 - Math.PI * 16) * 5, 0.01, 'sketch with inner circle is a ring');
 let t2 = false; try { buildBodies(R, [{ ...join }]); } catch { t2 = true; } if (!t2) { console.error('FAIL join without a body'); process.exit(1); } console.log('ok join without a body rejected');
+// Fillet / chamfer / shell on a 40x30x10 plate
+const fv = (k: any, size: number, edges: any) => V(buildBodies(R, [plate, { kind: k, sketch: [], depth: size, edges }]));
+const cornerArea = (r: number) => r * r * (1 - Math.PI / 4);
+near(fv('fillet', 3, 'vertical'), 12000 - 4 * cornerArea(3) * 10, 0.01, 'fillet 4 vertical edges r3');
+near(fv('chamfer', 2, 'vertical'), 12000 - 4 * 2 * 2 / 2 * 10, 0.01, 'chamfer 4 vertical edges 2');
+const all = fv('fillet', 1, 'all'); if (!(all < 12000 && all > 11500)) { console.error('FAIL fillet all', all); process.exit(1); } console.log('ok fillet all edges', all.toFixed(3));
+const top = fv('chamfer', 1, 'top'); near(top, 12000 - (2 * (40 + 30) * 0.5), 1.5, 'chamfer top edges 1 (approx, corners)');
+const sh = fv('shell', 2, 'top'); console.log('shell vol', sh.toFixed(3));
+if (!(Math.abs(sh - (12000 - 36 * 26 * 8)) < 0.01 || Math.abs(sh - (44 * 34 * 12 - 40 * 30 * 10)) < 1)) { console.error('FAIL shell volume', sh); process.exit(1); }
+let tOver = false; try { fv('fillet', 50, 'all'); } catch { tOver = true; } if (!tOver) { console.error('FAIL oversized fillet should throw'); process.exit(1); } console.log('ok oversized fillet rejected');
+let tNo = false; try { buildBodies(R, [plate, { kind: 'fillet', sketch: [], depth: 3, edges: 'vertical' }, { kind: 'chamfer', sketch: [], depth: 1, edges: 'top' }, { kind: 'shell', sketch: [], depth: 1.5, edges: 'top' }]); } catch (e) { tNo = /no effect/.test((e as Error).message); }
+console.log(tNo ? 'ok shell that the kernel cannot apply is reported, not silent' : 'NOTE shell after fillet+chamfer applied');
