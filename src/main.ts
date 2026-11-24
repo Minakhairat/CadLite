@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'point' | 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -152,7 +152,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)));
-  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
@@ -224,14 +224,14 @@ sk.addEventListener('pointerdown', (e) => {
     solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
   }
-  if (tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq' || tool === 'cfix') {
+  if (tool === 'ccol' || tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq' || tool === 'cfix') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
     sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
     if (bi < 0) { msg('Constraint: click a line.'); return; }
-    const ln = sketch[bi] as Extract<Entity, { t: 'line' }>; const two = tool === 'cpar' || tool === 'cper' || tool === 'ceq';
+    const ln = sketch[bi] as Extract<Entity, { t: 'line' }>; const two = tool === 'cpar' || tool === 'cper' || tool === 'ceq' || tool === 'ccol';
     if (two && (!conPick || !sketch.includes(conPick as Entity))) { conPick = ln; msg('Now click the second line.'); return; }
     if (two && conPick === ln) { msg('Pick a different second line.'); return; }
-    const c: Con = { k: ({ chor: 'h', cver: 'v', cpar: 'par', cper: 'perp', ceq: 'eq', cfix: 'fix' } as const)[tool], l: ln, ...(two ? { m: conPick! } : {}) }; if (two) { c.l = conPick!; c.m = ln; } conPick = null;
+    const c: Con = { k: ({ chor: 'h', cver: 'v', cpar: 'par', cper: 'perp', ceq: 'eq', cfix: 'fix', ccol: 'col' } as const)[tool], l: ln, ...(two ? { m: conPick! } : {}) }; if (two) { c.l = conPick!; c.m = ln; } conPick = null;
     cons.push(c); msg('Solving...');
     solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
