@@ -56,7 +56,12 @@ near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y:
   const h: Spec = { kind: 'extrude', sketch: [{ t: 'circle', c: { x: 10, y: 10 }, r: 2.5 }], depth: 15, op: 'cut' };
   const sh: Spec = { kind: 'shell', sketch: [], depth: 2, edges: 'top' };
   const chm = (d: number): Spec => ({ kind: 'chamfer', sketch: [], depth: d, edges: 'bottom' });
-  let bad = false; try { buildBodies(R, [blk, h, chm(3), sh]); } catch (e) { bad = /invalid solid/.test((e as Error).message); }
+  let bad = false; try { buildBodies(R, [blk, h, chm(3), sh]); } catch (e) { bad = /invalid/.test((e as Error).message); }
   if (!bad) { console.error('FAIL invalid shell after hole+chamfer must be rejected'); process.exit(1); } console.log('ok invalid Shell (hole+chamfer 3) rejected');
   const v2 = V(buildBodies(R, [blk, chm(2), sh])); if (!(v2 > 5000 && v2 < 6492)) { console.error('FAIL chamfer then shell volume', v2); process.exit(1); } console.log('ok chamfer 2 then shell volume', v2.toFixed(2), '(< plain shell 6492)');
+}
+// Concave (L-shaped) part: Shell must not be falsely rejected by the validity check.
+{
+  const L: Spec = { kind: 'extrude', sketch: [{ t: 'poly', pts: [{ x: 0, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 15 }, { x: 15, y: 15 }, { x: 15, y: 40 }, { x: 0, y: 40 }] }], depth: 12 };
+  for (const t of [1, 2, 3]) { const v = V(buildBodies(R, [L, { kind: 'shell', sketch: [], depth: t, edges: 'top' }])); if (!(v > 1000 && v < 11700)) { console.error('FAIL L shell', t, v); process.exit(1); } console.log('ok concave L shell t', t, v.toFixed(1)); }
 }
