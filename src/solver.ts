@@ -20,6 +20,6 @@ export async function dofSketch(lines: L[], cons: Con[]): Promise<number> {
   if (!w) w = make_gcs_wrapper(wasmUrl).catch((e) => { w = null; throw e; });
   const cp = lines.map((l) => ({ a: { ...l.a }, b: { ...l.b } }));
   const map = (x?: L) => (x ? cp[lines.indexOf(x)] : undefined);
-  const cc = cons.filter((c) => lines.includes(c.l) && (!c.m || lines.includes(c.m))).map((c) => ({ ...c, l: map(c.l) as L, ...(c.m ? { m: map(c.m) as L } : {}) }));
+  const cc = cons.filter((c) => lines.includes(c.l) && (!c.m || lines.includes(c.m)) && (!c.n || lines.includes(c.n))).map((c) => ({ ...c, l: map(c.l) as L, ...(c.m ? { m: map(c.m) as L } : {}), ...(c.n ? { n: map(c.n) as L } : {}) }));
   return solveLines((await w) as never, cp, cc);
 }
