@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "node scripts/pwa-icons.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx src/geometry.test.ts && tsx src/kernel-core.test.ts && tsx src/solver-core.test.ts && tsx src/sketch-ops.test.ts",
+    "test": "tsx src/geometry.test.ts && tsx src/kernel-core.test.ts && tsx src/solver-core.test.ts && tsx src/sketch-ops.test.ts && tsx src/circle-solver-core.test.ts",
     "desktop": "tauri dev",
     "desktop:build": "tauri build",
     "cap:sync": "npm run build && cap sync",
