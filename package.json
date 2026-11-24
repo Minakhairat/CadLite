@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/pwa-icons.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "tsx src/geometry.test.ts && tsx src/kernel-core.test.ts && tsx src/solver-core.test.ts",
     "desktop": "tauri dev",
