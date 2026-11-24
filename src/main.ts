@@ -13,8 +13,8 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'none' = 'rect';
-let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null;
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'none' = 'rect';
+let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null;
 let filPt: P | null = null; let filR = 2;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
@@ -108,7 +108,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)));
-  for (const c of cons) { const mid = (l: L) => toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); if (c.k === 'len') continue; const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
@@ -122,6 +122,15 @@ sk.addEventListener('pointerdown', (e) => {
   if (drag && (tool === 'rect' || tool === 'circle')) { sk.setPointerCapture(e.pointerId); drag.cur = pt(e); const c = current(); if (c) sketch.push(c); drag = null; draw(); props(); return; } // second click commits (lesson: click, move, click)
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e); const pr = ptRaw(e);
+  if (tool === 'ccoin') {
+    let bd = (14 * devicePixelRatio) / cam.s, best: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null;
+    for (const en of sketch) if (en.t === 'line') for (const e2 of [0, 1]) { const q = e2 ? en.b : en.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd && !(conEnd && conEnd.l === en)) { bd = d; best = { l: en, e: e2 }; } }
+    if (!best) { msg('Coincident: click near a line end point.'); return; }
+    if (!conEnd) { conEnd = best; msg('Now click the end point to join it to.'); return; }
+    const c: Con = { k: 'coin', l: conEnd.l, m: best.l, v: (conEnd.e << 1) | best.e }; conEnd = null; cons.push(c); msg('Solving...');
+    solveSketch(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
+    return;
+  }
   if (tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq' || tool === 'cfix') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
     sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
@@ -347,7 +356,7 @@ function restoreSrc(s: SketchSrc) {
   sketch = clone(s.ents); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos }));
   cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
 }
-function startSketch(from?: Entity[], src?: SketchSrc | null) { cons = []; dims = []; conPick = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
+function startSketch(from?: Entity[], src?: SketchSrc | null) { cons = []; dims = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
   if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
