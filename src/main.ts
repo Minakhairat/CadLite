@@ -6,7 +6,7 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf } from './sketch-ops';
+import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity } from './sketch-ops';
 import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -450,19 +450,20 @@ const usedByCon = (e: Entity) => cons.some((c) => c.l === (e as unknown) || c.m 
 function toggleConstruction() { if (!selE.length) { msg('Select shapes first (Select tool), then press Construction.'); return; } const to = !selE.every((e) => e.cn); for (const e of selE) { if (to) e.cn = true; else delete e.cn; } ck(); props(); draw(); msg(to ? `${selE.length} shape(s) are now construction (dashed, not part of the profile).` : `${selE.length} shape(s) are normal again.`); }
 const xconEl = document.getElementById('xcon'); if (xconEl) xconEl.onclick = toggleConstruction;
 function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).`); }
-type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off';
+type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off' | 'scale';
 let xop: XOp = 'move';
 const xf = (id: string) => parseFloat((document.getElementById(id) as HTMLInputElement).value);
 function xOpen(op: XOp) {
   if (mode !== 'sketch') return;
   if (!selE.length) { tool = 'select'; refreshButtons(); msg('Select the shapes first: click them with the Select tool (Ctrl+click adds), then press the command again.'); return; }
   xop = op; const L = (t: string, id: string, v: string) => `<label>${t}<input id="${id}" type="number" step="any" value="${v}"/></label>`;
-  const T = { move: 'Move', copy: 'Copy', rot: 'Rotate', mir: 'Mirror', off: 'Offset' }[op]; $('xt').textContent = `${T} (${selE.length} selected)`;
+  const T = { move: 'Move', copy: 'Copy', rot: 'Rotate', mir: 'Mirror', off: 'Offset', scale: 'Scale' }[op]; $('xt').textContent = `${T} (${selE.length} selected)`;
   const keep = (on: boolean) => `<label style="display:flex;gap:6px;align-items:center"><input id="xkeep" type="checkbox" style="width:auto" ${on ? 'checked' : ''}/>Keep the original</label>`;
   $('xin').innerHTML = op === 'move' ? L('X distance (mm)', 'xa', '0') + L('Y distance (mm)', 'xb', '0')
     : op === 'copy' ? L('X offset (mm)', 'xa', '10') + L('Y offset (mm)', 'xb', '0') + L('Number of copies', 'xn', '1')
     : op === 'rot' ? L('Angle (deg, counter-clockwise)', 'xa', '90') + L('Centre X (mm)', 'xb', '0') + L('Centre Y (mm)', 'xc', '0') + keep(false)
     : op === 'mir' ? `<label>Axis<select id="xax"><option value="y">Y axis (x = 0)</option><option value="x">X axis (y = 0)</option><option value="c">Line through two points</option></select></label>` + L('Point 1 X', 'xa', '0') + L('Point 1 Y', 'xb', '0') + L('Point 2 X', 'xc', '0') + L('Point 2 Y', 'xd', '10') + keep(true)
+    : op === 'scale' ? L('Scale factor (greater than 0)', 'xa', '2') + L('Base point X (mm)', 'xb', '0') + L('Base point Y (mm)', 'xc', '0') + keep(false)
     : L('Distance (mm). Positive = outward / left of the line', 'xa', '5');
   $('xdlg').classList.add('show');
 }
@@ -472,6 +473,7 @@ function xApply() {
     if (xop === 'move') { const a = xf('xa'), b = xf('xb'); if (![a, b].every(Number.isFinite)) return bad('Enter numbers.'); out = sel0.map((e) => transformEntity(e, moveTf(a, b))); }
     else if (xop === 'copy') { const a = xf('xa'), b = xf('xb'), n = Math.round(xf('xn')); if (![a, b].every(Number.isFinite) || !(n >= 1 && n <= 200)) return bad('Enter numbers (copies 1 to 200).'); keepOrig = true; for (let k = 1; k <= n; k++) out.push(...sel0.map((e) => transformEntity(e, moveTf(a * k, b * k)))); }
     else if (xop === 'rot') { const a = xf('xa'), cx = xf('xb'), cy = xf('xc'); if (![a, cx, cy].every(Number.isFinite)) return bad('Enter numbers.'); keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked; out = sel0.map((e) => transformEntity(e, rotateTf({ x: cx, y: cy }, a))); }
+    else if (xop === 'scale') { const k = xf('xa'), cx = xf('xb'), cy = xf('xc'); if (![k, cx, cy].every(Number.isFinite) || !(k > 0)) return bad('Enter a scale factor greater than 0 and numbers for the base point.'); keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked; out = sel0.map((e) => scaleEntity(e, { x: cx, y: cy }, k) as Entity); }
     else if (xop === 'mir') {
       const ax = (document.getElementById('xax') as HTMLSelectElement).value; keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked;
       const p1 = ax === 'y' ? { x: 0, y: 0 } : ax === 'x' ? { x: 0, y: 0 } : { x: xf('xa'), y: xf('xb') }; const p2 = ax === 'y' ? { x: 0, y: 1 } : ax === 'x' ? { x: 1, y: 0 } : { x: xf('xc'), y: xf('xd') };
@@ -480,9 +482,9 @@ function xApply() {
     } else { const d = xf('xa'); if (!Number.isFinite(d) || d === 0) return bad('Enter a distance other than 0.'); keepOrig = true; const r = sel0.map((e) => offsetEntity(e, d)); const fail = r.findIndex((x) => !x); if (fail >= 0) return bad(`Offset is not possible for ${sel0[fail].t === 'poly' ? 'a polygon (not supported yet)' : 'this shape at that distance'}. Nothing changed.`); out = r as Entity[]; }
   } catch (er) { return bad((er as Error).message); }
   if (!keepOrig) { const locked = sel0.find(usedByCon); if (locked) return bad('A selected shape has constraints or dimensions, so it cannot be moved in place. Use Copy or Keep the original, or remove them. Nothing changed.'); sketch = sketch.filter((e) => !sel0.includes(e)); }
-  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset' }[xop]} ${sel0.length} shape(s).`);
+  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset', scale: 'Scaled' }[xop]} ${sel0.length} shape(s).`);
 }
-$('xmove').onclick = () => xOpen('move'); $('xcopy').onclick = () => xOpen('copy'); $('xrot').onclick = () => xOpen('rot'); $('xmir').onclick = () => xOpen('mir'); $('xoff').onclick = () => xOpen('off');
+$('xmove').onclick = () => xOpen('move'); $('xcopy').onclick = () => xOpen('copy'); $('xrot').onclick = () => xOpen('rot'); $('xmir').onclick = () => xOpen('mir'); $('xoff').onclick = () => xOpen('off'); const xscEl = document.getElementById('xsc'); if (xscEl) xscEl.onclick = () => xOpen('scale');
 $('xdel').onclick = deleteSel; $('xundo').onclick = undoSk; $('xredo').onclick = redoSk; $('xok').onclick = xApply; $('xcancel').onclick = () => $('xdlg').classList.remove('show');
 addEventListener('keydown', (e) => {
   const t = (e.target as HTMLElement).tagName; if (t === 'INPUT' || t === 'SELECT' || mode !== 'sketch') return;
