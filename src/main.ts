@@ -177,7 +177,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.75)); const dl = new THREE.Directio
 const gridH = new THREE.GridHelper(200, 20, 0x7f93b5, 0xaebfda); gridH.rotateX(Math.PI / 2); scene.add(gridH);
 const group = new THREE.Group(); scene.add(group);
 let shown: KBody[] | null = null; // kernel result (Join/Cut/Intersect); null = draw each feature
-const isMod = (k: string) => k === 'fillet' || k === 'chamfer' || k === 'shell';
+const isMod = (k: string) => k === 'hole' || k === 'fillet' || k === 'chamfer' || k === 'shell';
 const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' || isMod(f.kind));
 const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir));
 const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges });
@@ -240,7 +240,7 @@ function refreshButtons() {
   const model = mode === 'model';
   ($('extrude') as HTMLButtonElement).disabled = !model || !pending; ($('revolve') as HTMLButtonElement).disabled = !model || !pending;
   ($('editft') as HTMLButtonElement).disabled = !model || sel === null; ($('delft') as HTMLButtonElement).disabled = !model || sel === null;
-  for (const id of ['fil', 'cha', 'she']) ($(id) as HTMLButtonElement).disabled = !model || !features.length;
+  for (const id of ['hol', 'fil', 'cha', 'she']) ($(id) as HTMLButtonElement).disabled = !model || !features.length;
   for (const id of ['stl', 'obj', 'step']) ($(id) as HTMLButtonElement).disabled = !features.length; ($('startsk') as HTMLButtonElement).disabled = !model;
   document.querySelectorAll<HTMLButtonElement>('[data-proxy]').forEach((b) => (b.disabled = ($(b.dataset.proxy!) as HTMLButtonElement).disabled));
   document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
@@ -254,6 +254,7 @@ function tree() {
   };
   node('Part1', 0, 'p'); node(`Solid Bodies(${shown ? shown.length : features.length})`, 1, ''); node('View: Master', 1, ''); node('Origin', 1, 'o'); node('XY Plane', 2, ''); node('X Axis', 2, ''); node('Y Axis', 2, '');
   features.forEach((f, i) => {
+    if (f.kind === 'hole') { const c = f.sketch[0] as any; node(`Hole${i + 1}  (Ø${(2 * c.r).toFixed(2)} mm at ${c.c.x}, ${c.c.y}; ${f.depth > 0 ? f.depth + ' mm deep' : 'through all'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, undefined, sel === i); return; }
     if (isMod(f.kind)) { node(`${f.kind[0].toUpperCase()}${f.kind.slice(1)}${i + 1}  (${f.depth} mm, ${f.edges ?? 'all'} ${f.kind === 'shell' ? 'open face' : 'edges'})`, 1, 'f', () => { sel = i; rebuild(); tree(); refreshButtons(); }, undefined, sel === i); return; }
     node(`Sketch${i + 1}`, 2, 's', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
   });
@@ -344,8 +345,17 @@ $('dok').onclick = async () => {
   } catch (err) { msg((err as Error).message); }
 };
 let modKind: 'fillet' | 'chamfer' | 'shell' | null = null;
+const holeUI = (on: boolean) => document.querySelectorAll<HTMLElement>('#mdlg .holeonly').forEach((e) => (e.style.display = on ? '' : 'none'));
+function openHole() {
+  if (!features.length) { msg('Create a solid first.'); return; }
+  modKind = 'hole' as never; $('mdlgt').textContent = 'Hole'; holeUI(true); ($('mdlg').querySelector('.notholeonly') as HTMLElement).style.display = 'none';
+  $('mlabel').textContent = 'Depth (mm, 0 = through all)'; ($('msize') as HTMLInputElement).value = '0'; ($('msize') as HTMLInputElement).min = '0';
+  $('mdlgmsg').textContent = 'Drilled from the top of the solid, along -Z. Position is on the sketch plane (mm).'; $('mdlg').classList.add('show');
+}
+$('hol').onclick = openHole;
 function openMod(k: 'fillet' | 'chamfer' | 'shell') {
   if (!features.length) { msg('Create a solid first.'); return; }
+  holeUI(false); ($('mdlg').querySelector('.notholeonly') as HTMLElement).style.display = ''; ($('msize') as HTMLInputElement).min = '0.01'; if (($('msize') as HTMLInputElement).value === '0') ($('msize') as HTMLInputElement).value = '2';
   modKind = k; $('mdlgt').textContent = k[0].toUpperCase() + k.slice(1);
   $('mlabel').textContent = k === 'fillet' ? 'Radius (mm)' : k === 'chamfer' ? 'Distance (mm)' : 'Wall thickness (mm)';
   $('mdlgmsg').textContent = k === 'shell' ? 'Hollows every solid inward. Edges choice picks which face is left open.' : 'Applies to every solid. Edges choice picks which edges.';
@@ -355,6 +365,14 @@ $('fil').onclick = () => openMod('fillet'); $('cha').onclick = () => openMod('ch
 $('mcancel').onclick = () => { $('mdlg').classList.remove('show'); modKind = null; };
 $('mok').onclick = async () => {
   if (!modKind) return;
+  if ((modKind as string) === 'hole') {
+    const hx = parseFloat(($('hx') as HTMLInputElement).value), hy = parseFloat(($('hy') as HTMLInputElement).value), hd = parseFloat(($('hd') as HTMLInputElement).value), dp = parseFloat(($('msize') as HTMLInputElement).value);
+    if (!(hd > 0) || !(dp >= 0) || !isFinite(hx) || !isFinite(hy)) { msg('Hole: diameter must be greater than 0, depth 0 or more, X/Y numbers.'); return; }
+    const hf: Feature = { kind: 'hole', depth: dp, sketch: [{ t: 'circle', c: { x: hx, y: hy }, r: hd / 2 }], geo: new THREE.BufferGeometry() };
+    if (!(await applyFeatures([...features, hf]))) return;
+    sel = features.length - 1; $('mdlg').classList.remove('show'); modKind = null; rebuild(); tree(); refreshButtons();
+    msg(`Hole applied. Total volume: ${(shown ?? []).reduce((s, x) => s + volume(x.geo), 0).toFixed(1)} mm³`); return;
+  }
   const size = parseFloat(($('msize') as HTMLInputElement).value); const edges = ($('medges') as HTMLSelectElement).value as Feature['edges'];
   if (!(size > 0)) { msg('Size must be greater than 0'); return; }
   const f: Feature = { kind: modKind, depth: size, sketch: [], geo: new THREE.BufferGeometry(), edges };
