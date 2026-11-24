@@ -6,7 +6,8 @@ export type Op = 'new' | 'join' | 'cut' | 'intersect';
 export type Dir = 'normal' | 'flip' | 'sym';
 export type Edges = 'all' | 'vertical' | 'top' | 'bottom';
 export type Plane = 'XY' | 'XZ' | 'YZ';
-export type Spec = { plane?: Plane; kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
+export type Orient = { r?: 0 | 1 | 2 | 3; f?: boolean };
+export type Spec = { plane?: Plane; orient?: Orient; kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; sketch: Entity[]; depth: number; op?: Op; dir?: Dir; edges?: Edges };
 type R = typeof Replicad;
 
 const valid = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 && Math.abs(e.a.y - e.b.y) > 1e-6 : e.t === 'circle' ? e.r > 1e-6 : e.t === 'poly');
@@ -49,6 +50,8 @@ export function revolveSolid(R: R, sketch: Entity[]): Replicad.Shape3D {
 }
 
 /** Move a solid built in sketch space (x,y in the plane, z along the extrusion) onto its sketch plane. XY: unchanged. XZ: sketch x to X, sketch y to Z, extrusion to -Y. YZ: sketch x to Y, sketch y to Z, extrusion to +X (a cyclic permutation: 120 degrees about (1,1,1)). */
+/** Sketch axis orientation: turn the sketch x axis by r*90 degrees about the plane normal, and f flips the plane normal (a half turn about the sketch x axis). Proper rotations only. Applied in sketch space, before the plane mapping. */
+export function orientSolid(s: Replicad.Shape3D, o?: Orient): Replicad.Shape3D { let t: any = s; if (o?.r) t = t.rotate(90 * o.r, [0, 0, 0], [0, 0, 1]); if (o?.f) t = t.rotate(180, [0, 0, 0], [1, 0, 0]); return t; }
 export function toPlane(s: Replicad.Shape3D, plane?: Plane): Replicad.Shape3D { return plane === 'XZ' ? (s as any).rotate(90, [0, 0, 0], [1, 0, 0]) : plane === 'YZ' ? (s as any).rotate(120, [0, 0, 0], [1, 1, 1]) : s; }
 const span = (depth: number, dir: Dir | undefined): [number, number] => (dir === 'flip' ? [-depth, depth] : dir === 'sym' ? [-depth / 2, depth] : [0, depth]);
 const bb = (s: Replicad.Shape3D) => s.boundingBox.bounds as [number[], number[]];
@@ -77,9 +80,9 @@ export function buildBodies(R: R, feats: Spec[]): Replicad.Shape3D[] {
       bodies = bodies.map((b) => modify(b, f, nm));
       return;
     }
-    if (f.kind === 'revolve') { if ((f.op ?? 'new') !== 'new') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.'); bodies.push(toPlane(revolveSolid(R, f.sketch), f.plane)); return; }
+    if (f.kind === 'revolve') { if ((f.op ?? 'new') !== 'new') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.'); bodies.push(toPlane(orientSolid(revolveSolid(R, f.sketch), f.orient), f.plane)); return; }
     if (f.kind !== 'extrude') throw new Error('Revolve together with Join/Cut/Intersect is not supported yet.');
-    const [z0, h] = span(f.depth, f.dir); const s = toPlane(extrudeSolid(R, f.sketch, h, z0), f.plane); const op = f.op ?? 'new'; const n = `Feature ${i + 1}`;
+    const [z0, h] = span(f.depth, f.dir); const s = toPlane(orientSolid(extrudeSolid(R, f.sketch, h, z0), f.orient), f.plane); const op = f.op ?? 'new'; const n = `Feature ${i + 1}`;
     if (op === 'new') { bodies.push(s); return; }
     if (!bodies.length) throw new Error(`${n}: ${op === 'join' ? 'Join' : op === 'cut' ? 'Cut' : 'Intersect'} needs an existing solid. Create a New Solid first.`);
     if (op === 'join') {
