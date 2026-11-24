@@ -1,4 +1,4 @@
-import { extrude, revolve, volume, Entity } from './geometry';
+import { extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (Math.abs(a - b) > tol) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(2)); };
 const box: Entity[] = [{ t: 'rect', a: { x: 0, y: 0 }, b: { x: 10, y: 20 } }];
 near(volume(extrude(box, 5)), 1000, 1e-6, 'box extrude volume');
@@ -43,3 +43,12 @@ if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } co
   console.log('sphere mesh volume', v, 'exact', exact, 'error %', (100 * (v - exact)) / exact);
   near(v, exact, exact * 0.02, 'sphere display mesh volume within 2 percent of exact (this one case)');
 }
+
+// Extend / Split (hand values)
+{ const wall = { a: { x: 10, y: -5 }, b: { x: 10, y: 5 } };
+  let e = extendLine({ a: { x: 0, y: 0 }, b: { x: 4, y: 0 } }, [wall], { x: 4, y: 0 })!; near(e.b.x, 10, 1e-9, 'extend end B to the wall at x=10'); near(e.a.x, 0, 1e-9, 'extend keeps the other end');
+  e = extendLine({ a: { x: 4, y: 0 }, b: { x: 0, y: 0 } }, [wall], { x: 4, y: 0 })!; near(e.a.x, 10, 1e-9, 'extend end A (click near A) to the wall');
+  if (extendLine({ a: { x: 0, y: 0 }, b: { x: 4, y: 0 } }, [{ a: { x: 10, y: 1 }, b: { x: 10, y: 5 } }], { x: 4, y: 0 }) !== null) { console.error('FAIL extend must not reach a segment that does not cross the ray'); process.exit(1); } console.log('ok extend: segment that does not cross the ray is ignored');
+  if (extendLine({ a: { x: 0, y: 0 }, b: { x: 4, y: 0 } }, [{ a: { x: -3, y: -5 }, b: { x: -3, y: 5 } }], { x: 4, y: 0 }) !== null) { console.error('FAIL extend must not go backwards'); process.exit(1); } console.log('ok extend: wall behind the end is ignored');
+  const sp = splitLine({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { x: 3, y: 4 })!; near(sp[0].b.x, 3, 1e-9, 'split point x = projection 3'); near(sp[1].a.x, 3, 1e-9, 'second part starts at the split'); near(Math.hypot(sp[0].b.x - sp[0].a.x, 0) + Math.hypot(sp[1].b.x - sp[1].a.x, 0), 10, 1e-9, 'split parts add up to 10');
+  if (splitLine({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { x: -2, y: 1 }) !== null) { console.error('FAIL split at an end must be refused'); process.exit(1); } console.log('ok split at the end is refused'); }
