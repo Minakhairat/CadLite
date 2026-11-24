@@ -1,5 +1,7 @@
 name: Deploy website
-on: { push: { branches: [main] }, workflow_dispatch: {} }
+# Manual only. Enable Pages (Settings > Pages > GitHub Actions), then run this workflow,
+# or change the trigger back to: push: { branches: [main] }
+on: { workflow_dispatch: {} }
 permissions: { contents: read, pages: write, id-token: write }
 jobs:
   build:
