@@ -3,7 +3,7 @@ import type { P } from './geometry';
 import type { L } from './solver-core';
 export type Arc3 = { a: P; b: P; m: P };
 export type ArcCon = { k: 'tanla'; arc: Arc3; l: L };
-type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
+type _W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
 
 function centre3(a: P, b: P, m: P): { c: P; r: number } | null {
   const d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y)); if (Math.abs(d) < 1e-12) return null;
@@ -12,23 +12,27 @@ function centre3(a: P, b: P, m: P): { c: P; r: number } | null {
   return { c, r: Math.hypot(a.x - c.x, a.y - c.y) };
 }
 
-/** Solve the arc constraints. Writes the new middle point back into each arc (a and b never move). Throws when it cannot be met. */
-export function solveArcs(w: W, lines: L[], arcs: Arc3[], cons: ArcCon[]): void {
-  const prims: any[] = []; const geo = arcs.map((k) => centre3(k.a, k.b, k.m)); if (geo.some((g) => !g)) throw new Error('A selected arc is degenerate.');
-  const ccw = arcs.map((k) => (k.b.x - k.a.x) * (k.m.y - k.a.y) - (k.b.y - k.a.y) * (k.m.x - k.a.x) < 0); // a -> m -> b counter-clockwise? (m on the right of a->b)
-  lines.forEach((l, i) => prims.push({ id: `la${i}`, type: 'point', x: l.a.x, y: l.a.y, fixed: true }, { id: `lb${i}`, type: 'point', x: l.b.x, y: l.b.y, fixed: true }, { id: `l${i}`, type: 'line', p1_id: `la${i}`, p2_id: `lb${i}` }));
-  arcs.forEach((k, i) => {
-    const g = geo[i]!; const s = ccw[i] ? k.a : k.b, e = ccw[i] ? k.b : k.a;
-    prims.push({ id: `ac${i}`, type: 'point', x: g.c.x, y: g.c.y, fixed: false }, { id: `as${i}`, type: 'point', x: s.x, y: s.y, fixed: true }, { id: `ae${i}`, type: 'point', x: e.x, y: e.y, fixed: true },
-      { id: `a${i}`, type: 'arc', c_id: `ac${i}`, start_id: `as${i}`, end_id: `ae${i}`, radius: g.r, start_angle: Math.atan2(s.y - g.c.y, s.x - g.c.x), end_angle: Math.atan2(e.y - g.c.y, e.x - g.c.x) });
-  });
-  cons.forEach((c, n) => { const i = arcs.indexOf(c.arc), j = lines.indexOf(c.l); if (i < 0 || j < 0) return; prims.push({ id: `k${n}`, type: 'tangent_la', l_id: `l${j}`, a_id: `a${i}` }); });
-  w.clear_data(); w.push_primitives_and_params(prims);
-  const status = w.solve(); const bad = w.has_gcs_conflicting_constraints?.() ?? false; w.apply_solution();
-  const out = w.sketch_index.get_primitives(); const get = (id: string) => out.find((p: any) => p.id === id);
-  const res = arcs.map((k, i) => { const c = get(`ac${i}`), ar = get(`a${i}`); if (!c || !ar || !isFinite(c.x) || !isFinite(c.y) || !isFinite(ar.radius) || ar.radius < 1e-6) return null;
-    const s = ccw[i] ? k.a : k.b, e = ccw[i] ? k.b : k.a; let t0 = Math.atan2(s.y - c.y, s.x - c.x), t1 = Math.atan2(e.y - c.y, e.x - c.x); while (t1 <= t0) t1 += 2 * Math.PI;
-    const tm = (t0 + t1) / 2; return { x: c.x + ar.radius * Math.cos(tm), y: c.y + ar.radius * Math.sin(tm) }; });
-  if (status !== 0 || bad || res.some((r) => !r || !isFinite(r.x) || !isFinite(r.y))) throw new Error('These constraints conflict or cannot all be satisfied together.');
-  arcs.forEach((k, i) => { k.m = res[i] as P; });
+/** Tangent between a line (taken as the infinite line through it) and a three-point arc, solved exactly: the centre lies on the perpendicular bisector of a-b, so |dist(centre, line)| = r is a quadratic in the centre's offset t. Of the (up to two) solutions the one whose middle point is nearest the current one is used, and the arc keeps its side of the chord. Writes the new middle point; a and b never move. Throws when no tangent circle through a and b exists. (The planegcs wrapper argument is kept for the call shape; it was not reliable here: it reported success on non-tangent results.) */
+export function solveArcs(_w: unknown, lines: L[], arcs: Arc3[], cons: ArcCon[]): void {
+  const res = new Map<Arc3, P>();
+  for (const c of cons) {
+    if (!arcs.includes(c.arc) || !lines.includes(c.l)) continue;
+    const arc = c.arc, l = c.l; const cl = res.get(arc) ?? arc.m;
+    const ch = Math.hypot(arc.b.x - arc.a.x, arc.b.y - arc.a.y); if (ch < 1e-9) throw new Error('A selected arc is degenerate.');
+    const ux = (arc.b.x - arc.a.x) / ch, uy = (arc.b.y - arc.a.y) / ch, nx = -uy, ny = ux, h = ch / 2, M = { x: (arc.a.x + arc.b.x) / 2, y: (arc.a.y + arc.b.y) / 2 };
+    const ll = Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y); if (ll < 1e-9) throw new Error('The line is degenerate.');
+    const vx = -(l.b.y - l.a.y) / ll, vy = (l.b.x - l.a.x) / ll; // unit normal of the line
+    const s0 = vx * (M.x - l.a.x) + vy * (M.y - l.a.y), g = vx * nx + vy * ny, A = g * g - 1, B = 2 * s0 * g, C = s0 * s0 - h * h;
+    let ts: number[] = [];
+    if (Math.abs(A) < 1e-12) { if (Math.abs(B) < 1e-12) throw new Error('This arc cannot be tangent to that line (the line is parallel to its chord and passes through its end points).'); ts = [-C / B]; }
+    else { let D = B * B - 4 * A * C; if (D < -1e-9 * (B * B + Math.abs(4 * A * C) + 1)) throw new Error('This arc cannot be made tangent to that line while keeping its end points. Nothing changed.'); D = Math.max(0, D); ts = [(-B + Math.sqrt(D)) / (2 * A), (-B - Math.sqrt(D)) / (2 * A)]; }
+    const sg = ((cl.x - M.x) * nx + (cl.y - M.y) * ny) >= 0 ? 1 : -1;
+    let best: P | null = null, bd = Infinity;
+    for (const t of ts) { const r = Math.hypot(h, t); const cx = M.x + t * nx, cy = M.y + t * ny; const mid = { x: cx + sg * r * nx, y: cy + sg * r * ny };
+      const resid = Math.abs(Math.abs(vx * (cx - l.a.x) + vy * (cy - l.a.y)) - r); if (!(resid < 1e-6 * Math.max(1, r)) || !isFinite(mid.x) || !isFinite(mid.y) || r > 1e6) continue;
+      const d = Math.hypot(mid.x - cl.x, mid.y - cl.y); if (d < bd) { bd = d; best = mid; } }
+    if (!best) throw new Error('This arc cannot be made tangent to that line while keeping its end points. Nothing changed.');
+    res.set(arc, best);
+  }
+  res.forEach((m, arc) => { arc.m = m; });
 }
