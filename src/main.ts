@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
-import { solveSketch, Con, L } from './solver';
+import { solveSketch, solveCircleSketch, Con, L } from './solver';
+import { LINE_KINDS } from './solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf } from './sketch-ops';
@@ -14,7 +15,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'select' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -41,6 +42,15 @@ const ctx = sk.getContext('2d')!;
 const grid = () => (cam.s > 12 ? 1 : cam.s > 4 ? 5 : 10);
 const toWorld = (px: number, py: number): P => ({ x: (px - sk.width / 2) / cam.s + cam.x, y: -(py - sk.height / 2) / cam.s + cam.y });
 const toScreen = (p: P) => ({ x: (p.x - cam.x) * cam.s + sk.width / 2, y: -(p.y - cam.y) * cam.s + sk.height / 2 });
+/** Solve line constraints, then circle constraints (lines stay fixed). Nothing is written when either solve fails. */
+async function solveAll(lines: L[], all: Con[]): Promise<void> {
+  await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
+  const cc = all.filter((c) => !LINE_KINDS.includes(c.k)); if (!cc.length) return;
+  const circles = sketch.filter((e) => e.t === 'circle') as unknown as { c: P; r: number }[];
+  await solveCircleSketch(lines, circles, cc.map((c) => ({ k: c.k as 'tanlc' | 'tancc' | 'conc' | 'eqr', c: (c.k === 'tanlc' ? c.l : c.l) as never, ...(c.k === 'tanlc' ? { l: c.m } : { d: c.m as never }) })) as never);
+}
+const ringHit = (pr: P) => { let best: Extract<Entity, { t: 'circle' }> | null = null, bd = (10 * devicePixelRatio) / cam.s; for (const e of sketch) if (e.t === 'circle') { const d = Math.abs(Math.hypot(pr.x - e.c.x, pr.y - e.c.y) - e.r); if (d < bd) { bd = d; best = e; } } return best; };
+let cirPick: Entity | null = null;
 function path(pts: P[], close: boolean) { pts.forEach((p, i) => { const s = toScreen(p); i ? ctx.lineTo(s.x, s.y) : (ctx.beginPath(), ctx.moveTo(s.x, s.y)); }); if (close) ctx.closePath(); }
 function current(): Entity | null {
   if (!drag) return null;
@@ -113,7 +123,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)));
-  for (const c of cons) { const mid = (l: L) => toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0), y: ci.c.y }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = { h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=' }[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
@@ -128,13 +138,26 @@ sk.addEventListener('pointerdown', (e) => {
   if (e.button === 1 || e.shiftKey) { pan = { x: e.clientX, y: e.clientY }; return; }
   sk.setPointerCapture(e.pointerId); const p = pt(e); const pr = ptRaw(e);
   if (tool === 'select') { pickEnt(pr, e.ctrlKey || e.metaKey); return; }
+  if (tool === 'ctan' || tool === 'cconc' || tool === 'ceqr') {
+    const cir = ringHit(pr); let ln: Extract<Entity, { t: 'line' }> | null = null;
+    if (tool === 'ctan' && !cir) { let bd = (10 * devicePixelRatio) / cam.s; for (const e of sketch) if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; ln = e; } } }
+    const hit: Entity | null = cir ?? ln; const need = tool === 'ctan' ? 'a circle or a line' : 'a circle';
+    if (!hit) { msg(`Click ${need} (click the circle's outline).`); return; }
+    if (!cirPick || !sketch.includes(cirPick)) { if (hit.t !== 'circle') { msg('Click the circle first, then the line or the second circle.'); return; } cirPick = hit; msg('Now click the second shape. The second shape stays where it is; the first circle moves (its centre and radius can change).'); return; }
+    if (hit === cirPick) { msg('Pick a different second shape.'); return; }
+    const first = cirPick; cirPick = null; if (hit.t === 'line' && tool !== 'ctan') { msg('This tool needs two circles.'); return; }
+    const c: Con = { k: tool === 'ctan' ? (hit.t === 'line' ? 'tanlc' : 'tancc') : tool === 'cconc' ? 'conc' : 'eqr', l: first as unknown as L, m: hit as unknown as L };
+    cons.push(c); msg('Solving...');
+    solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied: lines and the second shape stayed, the first circle was adjusted.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
+    return;
+  }
   if (tool === 'ccoin') {
     let bd = (14 * devicePixelRatio) / cam.s, best: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null;
     for (const en of sketch) if (en.t === 'line') for (const e2 of [0, 1]) { const q = e2 ? en.b : en.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd && !(conEnd && conEnd.l === en)) { bd = d; best = { l: en, e: e2 }; } }
     if (!best) { msg('Coincident: click near a line end point.'); return; }
     if (!conEnd) { conEnd = best; msg('Now click the end point to join it to.'); return; }
     const c: Con = { k: 'coin', l: conEnd.l, m: best.l, v: (conEnd.e << 1) | best.e }; conEnd = null; cons.push(c); msg('Solving...');
-    solveSketch(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
+    solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
   }
   if (tool === 'chor' || tool === 'cver' || tool === 'cpar' || tool === 'cper' || tool === 'ceq' || tool === 'cfix') {
@@ -146,7 +169,7 @@ sk.addEventListener('pointerdown', (e) => {
     if (two && conPick === ln) { msg('Pick a different second line.'); return; }
     const c: Con = { k: ({ chor: 'h', cver: 'v', cpar: 'par', cper: 'perp', ceq: 'eq', cfix: 'fix' } as const)[tool], l: ln, ...(two ? { m: conPick! } : {}) }; if (two) { c.l = conPick!; c.m = ln; } conPick = null;
     cons.push(c); msg('Solving...');
-    solveSketch(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
+    solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
   }
   if (tool === 'trim') {
@@ -211,7 +234,7 @@ const commitDim = () => {
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
   try { dimApply(t.e, t.w, parseFloat(inp.value));
-    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: parseFloat(inp.value) }; cons.push(lc); solveSketch(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
+    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: parseFloat(inp.value) }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
   catch (er) { msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
@@ -544,7 +567,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; conPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; conPick = null; cirPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
