@@ -1,0 +1,22 @@
+import { createRequire } from 'module'; const require = createRequire(import.meta.url);
+import * as R from 'replicad';
+import { buildBodies, Spec } from './kernel-core';
+import { Entity } from './geometry';
+const init = require('replicad-opencascadejs');
+R.setOC(await init());
+const near = (a: number, b: number, tol: number, m: string) => { if (Math.abs(a - b) > tol) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(3)); };
+const V = (bs: any[]) => bs.reduce((s, b) => s + R.measureVolume(b), 0);
+const rect = (x0: number, y0: number, x1: number, y1: number): Entity => ({ t: 'rect', a: { x: x0, y: y0 }, b: { x: x1, y: y1 } });
+const plate: Spec = { kind: 'extrude', sketch: [rect(0, 0, 40, 30)], depth: 10 };
+const hole: Spec = { kind: 'extrude', sketch: [{ t: 'circle', c: { x: 20, y: 15 }, r: 5 }], depth: 10, op: 'cut' };
+near(V(buildBodies(R, [plate, hole])), 12000 - Math.PI * 25 * 10, 0.01, 'cut cylinder hole (exact)');
+let threw = false; try { buildBodies(R, [plate, { ...hole, dir: 'flip' }]); } catch { threw = true; }
+if (!threw) { console.error('FAIL flipped cut away from the part should be rejected'); process.exit(1); } console.log('ok flipped cut that misses the part is rejected');
+near(V(buildBodies(R, [plate, { ...hole, depth: 4, dir: 'sym' }])), 12000 - Math.PI * 25 * 2, 0.01, 'symmetric cut: 2 mm of the 4 mm lies inside the part');
+const join: Spec = { kind: 'extrude', sketch: [rect(30, 20, 60, 40)], depth: 10, op: 'join' };
+const j = buildBodies(R, [plate, join]); near(j.length, 1, 0, 'join gives one body'); near(V(j), 12000 + 30 * 20 * 10 - 10 * 10 * 10, 0.01, 'join volume (overlap counted once)');
+near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [rect(30, 20, 60, 40)], depth: 10, op: 'intersect' }])), 10 * 10 * 10, 0.01, 'intersect volume');
+near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [rect(10, 10, 20, 20), { t: 'circle', c: { x: 15, y: 15 }, r: 2 }], depth: 3, op: 'join' }])), 12000 + (100 - Math.PI * 4) * 3 * 0, 0.01, 'join inside the part adds nothing') ;
+const ring = buildBodies(R, [{ kind: 'extrude', sketch: [rect(0, 0, 20, 20), { t: 'circle', c: { x: 10, y: 10 }, r: 4 }], depth: 5 }]);
+near(V(ring), (400 - Math.PI * 16) * 5, 0.01, 'sketch with inner circle is a ring');
+let t2 = false; try { buildBodies(R, [{ ...join }]); } catch { t2 = true; } if (!t2) { console.error('FAIL join without a body'); process.exit(1); } console.log('ok join without a body rejected');
