@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -323,6 +323,15 @@ sk.addEventListener('pointerdown', (e) => {
   if (tool === 'arc') {
     segPts.push(p);
     if (segPts.length === 3) { const [a, b, mm] = segPts; if (circle3(a, b, mm)) { sketch.push({ t: 'arc', a, b, m: mm }); props(); } else msg('Arc points are on one line: pick a point off the line.'); segPts = []; }
+    hover = p; draw(); return;
+  }
+  if (tool === 'ellipse') {
+    segPts.push(p);
+    if (segPts.length === 2) { if (Math.hypot(segPts[1].x - segPts[0].x, segPts[1].y - segPts[0].y) < 1e-9) { segPts = []; msg('Ellipse: the major-axis end must differ from the centre.'); draw(); return; } msg('Now click a point at the semi-minor distance from the major axis.'); }
+    if (segPts.length === 3) { const [c, e1, q] = segPts; const a = Math.hypot(e1.x - c.x, e1.y - c.y), u = { x: (e1.x - c.x) / a, y: (e1.y - c.y) / a }, v = { x: -u.y, y: u.x }; const b = Math.abs((q.x - c.x) * v.x + (q.y - c.y) * v.y); segPts = [];
+      if (b < 1e-9) { msg('Ellipse: the minor point is on the major axis. Click off the axis.'); draw(); return; }
+      const pts: P[] = []; for (let i = 0; i < 72; i++) { const t = (i / 72) * 2 * Math.PI; pts.push({ x: c.x + u.x * a * Math.cos(t) + v.x * b * Math.sin(t), y: c.y + u.y * a * Math.cos(t) + v.y * b * Math.sin(t) }); }
+      sketch.push({ t: 'poly', pts }); props(); msg(`Ellipse added as a 72-segment polygon approximation: semi-major ${a.toFixed(3)} mm, semi-minor ${b.toFixed(3)} mm. It is not a true ellipse curve.`); }
     hover = p; draw(); return;
   }
   if (tool === 'slot') {
