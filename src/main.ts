@@ -7,7 +7,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity } from './sketch-ops';
-import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
+import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'rect' | 'circle' | 'poly' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -206,6 +206,22 @@ sk.addEventListener('pointerdown', (e) => {
     cons.push(c); msg('Solving...');
     solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { msg('Constraint applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
+  }
+  if (tool === 'extend' || tool === 'split') {
+    let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
+    sketch.forEach((e, i) => { if (e.t === 'line') { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
+    if (bi < 0) { msg(`${tool === 'extend' ? 'Extend' : 'Split'}: click a line.`); return; }
+    const l = sketch[bi] as Extract<Entity, { t: 'line' }>;
+    if (usedByCon(l)) { msg('This line has constraints or dimensions, so it cannot be changed in place. Remove them first. Nothing changed.'); return; }
+    if (tool === 'extend') {
+      const others = sketch.filter((e, i) => i !== bi && e.t === 'line') as Extract<Entity, { t: 'line' }>[];
+      const n = extendLine(l, others, pr); if (!n) { msg('Extend: no line in the way at that end. Nothing changed.'); return; }
+      sketch[bi] = { t: 'line', a: n.a, b: n.b }; msg('Extended to the next line.');
+    } else {
+      const sp = splitLine(l, pr); if (!sp) { msg('Split: click away from the ends of the line. Nothing changed.'); return; }
+      sketch.splice(bi, 1, { t: 'line', a: sp[0].a, b: sp[0].b }, { t: 'line', a: sp[1].a, b: sp[1].b }); msg('Split into two lines at that point.');
+    }
+    props(); draw(); return;
   }
   if (tool === 'trim') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
