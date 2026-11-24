@@ -5,11 +5,14 @@ export type C = { c: P; r: number };
 export type CCon = { k: 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad'; c: C; l?: L; d?: C; v?: number };
 type W = { clear_data: () => void; push_primitives_and_params: (p: any[]) => void; solve: () => number; apply_solution: () => void; has_gcs_conflicting_constraints?: () => boolean; sketch_index: { get_primitives: () => any[] } };
 
-/** Solve circle constraints. Each line end and circle centre is its own free point (no joining). Writes the solution back. Throws when the constraints cannot be met. */
+/** Solve circle constraints. Lines are held fixed (their ends and joins never move); only circle centres and radii move. Writes the solution back. Throws when the constraints cannot be met. */
 export function solveCircles(w: W, lines: L[], circles: C[], cons: CCon[]): void {
   const prims: any[] = [];
-  lines.forEach((l, i) => { prims.push({ id: `la${i}`, type: 'point', x: l.a.x, y: l.a.y, fixed: false }, { id: `lb${i}`, type: 'point', x: l.b.x, y: l.b.y, fixed: false }, { id: `l${i}`, type: 'line', p1_id: `la${i}`, p2_id: `lb${i}` }); });
+  lines.forEach((l, i) => { prims.push({ id: `la${i}`, type: 'point', x: l.a.x, y: l.a.y, fixed: true }, { id: `lb${i}`, type: 'point', x: l.b.x, y: l.b.y, fixed: true }, { id: `l${i}`, type: 'line', p1_id: `la${i}`, p2_id: `lb${i}` }); });
   circles.forEach((c, i) => { prims.push({ id: `cc${i}`, type: 'point', x: c.c.x, y: c.c.y, fixed: false }, { id: `c${i}`, type: 'circle', c_id: `cc${i}`, radius: c.r }); });
+  // The second circle of the LAST constraint is the reference: its centre and radius stay (earlier constraints are still enforced, so a conflict is reported instead of silently moved).
+  const lastD = cons.length ? cons[cons.length - 1].d : undefined; const refs = new Set<C>(lastD ? [lastD] : []);
+  refs.forEach((r) => { const i = circles.indexOf(r); if (i >= 0) { prims.find((p) => p.id === `cc${i}`).fixed = true; prims.push({ id: `kr${i}`, type: 'circle_radius', c_id: `c${i}`, radius: r.r }); } });
   cons.forEach((k, n) => {
     const i = circles.indexOf(k.c), j = k.d ? circles.indexOf(k.d) : -1, li = k.l ? lines.indexOf(k.l) : -1;
     if (i < 0 || (k.d && j < 0) || (k.l && li < 0)) return;
