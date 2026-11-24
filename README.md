@@ -1,4 +1,4 @@
-# CadLite
+# MK Cad
 
 A small parametric-style CAD tool: 2D sketch, then 3D part (extrude / revolve). No assemblies, by design.
 One TypeScript codebase: website, desktop (Tauri) and iOS/Android (Capacitor).
@@ -28,3 +28,7 @@ The `android/` project is generated, not committed: `npx cap add android && bash
 Status of native apps: Android debug build compiled once, never run on a device. Desktop (Tauri) and iOS are untested.
 
 Icons are original (`assets/icon.svg`).
+
+## Limits
+
+v0.1: sketch (rectangle, circle, polygon), extrude, revolve, edit, STL export. No join/cut. Overlap checks use bounding boxes (conservative): overlapping bodies are rejected, and STL export is blocked when loaded features overlap. Not feature-equivalent to any commercial CAD.
