@@ -8,7 +8,7 @@ const validE = (e: Entity) => (e.t === 'rect' ? Math.abs(e.a.x - e.b.x) > 1e-6 &
 
 // ---------------- OBJ (mesh, world coordinates, mm) ----------------
 export function toOBJ(bodies: Body[]): string {
-  let s = '# MK Cad OBJ export, units: mm\n'; let base = 0;
+  let s = '# MK CAD OBJ export, units: mm\n'; let base = 0;
   bodies.forEach((b, bi) => {
     const g = b.geo.clone(); if (b.kind === 'revolve') g.rotateX(Math.PI / 2);
     const ng = g.index ? g.toNonIndexed() : g; const p = ng.attributes.position;
@@ -192,7 +192,7 @@ function stepRevolve(b: Brep, sketch: Entity[]): number {
   return b.solid(faces);
 }
 
-export function toSTEP(bodies: Body[], name = 'MK Cad part'): string {
+export function toSTEP(bodies: Body[], name = 'MK CAD part'): string {
   const s = new Step(); const b = new Brep(s);
   const solids = bodies.map((bd) => (bd.kind === 'extrude' ? stepExtrude(b, bd.sketch, bd.depth) : stepRevolve(b, bd.sketch)));
   const ctxDims = s.add(`( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )`);
@@ -212,5 +212,5 @@ export function toSTEP(bodies: Body[], name = 'MK Cad part'): string {
   const pd = s.add(`PRODUCT_DEFINITION('design','',#${pdf},#${dc})`);
   const pds = s.add(`PRODUCT_DEFINITION_SHAPE('','',#${pd})`);
   s.add(`SHAPE_DEFINITION_REPRESENTATION(#${pds},#${rep})`);
-  return `ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('MK Cad export'),'2;1');\nFILE_NAME('part.step','',(''),(''),'MK Cad','MK Cad','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n${s.lines.join('\n')}\nENDSEC;\nEND-ISO-10303-21;\n`;
+  return `ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('MK CAD export'),'2;1');\nFILE_NAME('part.step','',(''),(''),'MK CAD','MK CAD','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));\nENDSEC;\nDATA;\n${s.lines.join('\n')}\nENDSEC;\nEND-ISO-10303-21;\n`;
 }
