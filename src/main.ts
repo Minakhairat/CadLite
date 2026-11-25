@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'circ3' | 'arcc' | 'rectc' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'circ3' | 'arcc' | 'rectc' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -349,6 +349,13 @@ sk.addEventListener('pointerdown', (e) => {
     if (segPts.length === 2) { const [c, q] = segPts; segPts = []; const dx = Math.abs(q.x - c.x), dy = Math.abs(q.y - c.y); if (dx < 1e-9 || dy < 1e-9) { msg('Rectangle: the corner must differ from the centre in both X and Y.'); draw(); return; } sketch.push({ t: 'rect', a: { x: c.x - dx, y: c.y - dy }, b: { x: c.x + dx, y: c.y + dy } }); props(); msg(`Rectangle added: ${+(2 * dx).toFixed(3)} x ${+(2 * dy).toFixed(3)} mm about the centre.`); }
     hover = p; draw(); return;
   }
+  if (tool === 'rpoly') {
+    segPts.push(p);
+    if (segPts.length === 2) { const [c, v] = segPts; segPts = []; if (Math.hypot(v.x - c.x, v.y - c.y) < 1e-9) { msg('Polygon: the vertex must differ from the centre.'); draw(); return; }
+      regPts = { c, v }; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
+      const inp = $<HTMLInputElement>('dimin'); inp.value = String(regN); msg('Polygon sides: type the number (3 to 100), then OK or Enter.'); setTimeout(() => { inp.focus(); inp.select(); }, 0); }
+    hover = p; draw(); return;
+  }
   if (tool === 'ellipse') {
     segPts.push(p);
     if (segPts.length === 2) { if (Math.hypot(segPts[1].x - segPts[0].x, segPts[1].y - segPts[0].y) < 1e-9) { segPts = []; msg('Ellipse: the major-axis end must differ from the centre.'); draw(); return; } msg('Now click a point at the semi-minor distance from the major axis.'); }
@@ -395,7 +402,16 @@ const commitFillet = () => {
   filPt = null; $('dimbox').style.display = 'none'; draw();
 };
 type Extrude_L = Extract<Entity, { t: 'line' }>;
+let regPts: { c: P; v: P } | null = null; let regN = 6;
+const commitRegular = () => {
+  const q = regPts!; const n = Math.round(parseFloat($<HTMLInputElement>('dimin').value));
+  if (!(n >= 3 && n <= 100)) { msg('Polygon: enter a whole number of sides from 3 to 100.'); return; }
+  const r = Math.hypot(q.v.x - q.c.x, q.v.y - q.c.y), a0 = Math.atan2(q.v.y - q.c.y, q.v.x - q.c.x); const pts: P[] = [];
+  for (let i = 0; i < n; i++) pts.push({ x: q.c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), y: q.c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n) });
+  sketch.push({ t: 'poly', pts }); regN = n; regPts = null; $('dimbox').style.display = 'none'; props(); draw(); msg(`Regular polygon added: ${n} sides, circumradius ${+r.toFixed(3)} mm (inscribed, first vertex at the click).`);
+};
 const commitDim = () => {
+  if (regPts) { commitRegular(); return; }
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
   try { dimApply(t.e, t.w, parseFloat(inp.value)); try { applyArcRels(); applyPointRels(); } catch (er2) { msg((er2 as Error).message); }
@@ -404,7 +420,7 @@ const commitDim = () => {
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
 $('dimok').onclick = commitDim;
-$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; filPt = null; $('dimbox').style.display = 'none'; } });
+$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; filPt = null; regPts = null; $('dimbox').style.display = 'none'; } });
 const ctxm = $('ctxm');
 const endTool = (exitTool: boolean) => { polyPts = []; segPts = []; drag = null; if (exitTool) { tool = 'none'; refreshButtons(); } ctxm.style.display = 'none'; draw(); };
 sk.addEventListener('contextmenu', (e) => { e.preventDefault(); if (mode !== 'sketch') return; const r = $('gfx').getBoundingClientRect(); ctxm.style.left = e.clientX - r.left + 'px'; ctxm.style.top = e.clientY - r.top + 'px'; ctxm.style.display = 'block'; });
@@ -766,7 +782,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
