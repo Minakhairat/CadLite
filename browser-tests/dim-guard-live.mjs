@@ -1,7 +1,7 @@
 import puppeteer from 'puppeteer-core'; import fs from 'node:fs';
 const out=[];const log=(...a)=>{const t=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ');out.push(t);console.log(t)};
 const b=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
-const url=process.argv[2];
+const url=process.argv[2];let fails=0;const ok=(name,c)=>{if(!c){fails++;log('ASSERT FAIL',name)}else log('ASSERT OK',name)};
 const w=(t=300)=>new Promise(r=>setTimeout(r,t));
 const mk=async()=>{const p=await b.newPage();await p.setViewport({width:1280,height:800});p.on('pageerror',e=>log('PAGEERR',e.message.slice(0,200)));await p.goto(url,{waitUntil:'networkidle0'});await p.evaluate(()=>localStorage.clear());await p.goto(url,{waitUntil:'networkidle0'});await w(1000);return p};
 const api=(p)=>{const o={};o.box=async()=>p.$eval('#sk',e=>{const q=e.getBoundingClientRect();return {x:q.x,y:q.y,w:q.width,h:q.height}});
@@ -49,13 +49,13 @@ await square();
 await dimLine(20,0,'40');
 await a.tool('cver');await a.click(0,20);await w(400);
 const g0=await S2();
-await dimLine(0,20,'30');log('plain 30 refused',await a.msg(),'unchanged',(await S2())===g0);
-await p.screenshot({path:'/tmp/dimguard-refused.png'});
-await p.keyboard.down('Control');await p.keyboard.press('y');await p.keyboard.up('Control');await w(400);log('redo after refusal',await a.msg(),'unchanged',(await S2())===g0,await lens());
-await dimLine(0,20,'15*2');log('expression 15*2 refused',await a.msg(),'unchanged',(await S2())===g0,await lens());
-await dimLine(0,20,'20*2');await w(800);log('expression 20*2 (no change needed, allowed)',await a.msg(),await lens());
-await ext(10);log('extrude volume (want 16000)',await a.vol());
+await dimLine(0,20,'30');{const m=await a.msg();ok('plain 30 refused with message',/Dimension refused/.test(m)&&/41\.2311/.test(m));ok('geometry unchanged after refusal',(await S2())===g0);}
+await p.keyboard.down('Control');await p.keyboard.press('y');await p.keyboard.up('Control');await w(400);ok('redo after refusal is empty and geometry unchanged',/Nothing to redo/.test(await a.msg())&&(await S2())===g0);
+await dimLine(0,20,'15*2');ok('expression 15*2 refused, geometry unchanged',/Dimension refused/.test(await a.msg())&&(await S2())===g0);
+await dimLine(0,20,'20*2');await w(800);ok('expression 20*2 accepted',/Dimension set/.test(await a.msg())&&(await lens())==='[40,40,40,40]');
+await ext(10);{const v=await a.vol();ok('extrude volume 16000',Math.abs(+[].concat(v)[0]-16000)<1e-3);}
 const f=await save(p,'mix2');const j=JSON.parse(fs.readFileSync(f,'utf8'));const sk=j.features[0].sketch||j.features[0].src||j.features[0];log('saved feature keys',Object.keys(j.features[0]).join(','));
 log('saved sketch src',JSON.stringify(j.features[0]).slice(0,900));
-p=await open(f);a=api(p);log('reopened volume',await a.vol());
-await p.screenshot({path:'/tmp/dimguard-reopen.png'});
+p=await open(f);a=api(p);{const v=await a.vol();ok('reopened volume 16000',Math.abs(+[].concat(v)[0]-16000)<1e-3);}
+ok('saved dims keep bottom v=40 and left x=20*2',JSON.stringify(j.features[0].src.dims.map(d=>d.v))==='[40,40]'&&j.features[0].src.dims[1].x==='20*2');
+await b.close();process.exit(fails?1:0);
