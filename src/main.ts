@@ -8,7 +8,7 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
+import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius, arcConstraintNote } from './sketch-ops';
 import { filletLineArc } from './fillet-arc';
 import { nearestOnArc, SketchPat, SketchSrc, Entity, Feature, P, filletCorner, chamferCorner, chamferDistAngle, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
@@ -735,7 +735,7 @@ function props() {
     } else if (e.t === 'circle') {
       title(`Circle ${i + 1}`); g.append(numField('Center X (mm)', e.c.x, (n) => (e.c.x = n)), numField('Center Y (mm)', e.c.y, (n) => (e.c.y = n)), numField('Radius (mm)', e.r, (n) => n > 0 && (e.r = n)));
     } else if (e.t === 'line') title(`Line ${i + 1} (${Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y).toFixed(2)} mm)`);
-    else if (e.t === 'arc') title(`Arc ${i + 1} (3-point)`);
+    else if (e.t === 'arc') { title(`Arc ${i + 1} (3-point)`); const nt = document.createElement('div'); nt.className = 'arcnote'; nt.style.cssText = 'font-size:11px;color:#5b6773;margin:2px 0'; nt.textContent = arcConstraintNote(cons.filter((c) => (c.l as unknown) === e || (c.m as unknown) === e).map((c) => c.k as string)); r.append(nt); }
     else if (isPt(e)) { const pe = e as PointE; title(`Point ${i + 1}`); g.append(numField('X (mm)', pe.p.x, (n) => (pe.p.x = n)), numField('Y (mm)', pe.p.y, (n) => (pe.p.y = n))); }
     else title(`Polygon ${i + 1} (${e.pts.length} points)`);
     const role = patRole(e);
