@@ -42,3 +42,39 @@ export function solveCircles(w: W, lines: L[], circles: C[], cons: CCon[]): void
   lines.forEach((l, i) => { const a = pt(`la${i}`), b = pt(`lb${i}`); l.a = { x: a.x, y: a.y }; l.b = { x: b.x, y: b.y }; });
   circles.forEach((c, i) => { const p = pt(`cc${i}`); c.c = { x: p.x, y: p.y }; c.r = ci(`c${i}`).radius; });
 }
+
+function buildPrims(lines: L[], circles: C[], cons: CCon[], bump = -1): any[] {
+  const prims: any[] = [];
+  lines.forEach((l, i) => { prims.push({ id: `la${i}`, type: 'point', x: l.a.x, y: l.a.y, fixed: true }, { id: `lb${i}`, type: 'point', x: l.b.x, y: l.b.y, fixed: true }, { id: `l${i}`, type: 'line', p1_id: `la${i}`, p2_id: `lb${i}` }); });
+  circles.forEach((c, i) => { const b = i === bump; prims.push({ id: `cc${i}`, type: 'point', x: c.c.x + (b ? 0.31 : 0), y: c.c.y + (b ? 0.17 : 0), fixed: false }, { id: `c${i}`, type: 'circle', c_id: `cc${i}`, radius: b ? c.r * 1.07 + 0.05 : c.r }); });
+  cons.forEach((k, n) => {
+    const i = circles.indexOf(k.c), j = k.d ? circles.indexOf(k.d) : -1, li = k.l ? lines.indexOf(k.l) : -1;
+    if (i < 0 || (k.d && j < 0) || (k.l && li < 0)) return;
+    const id = `k${n}`;
+    if (k.k === 'tanlc') prims.push({ id, type: 'tangent_lc', l_id: `l${li}`, c_id: `c${i}` });
+    else if (k.k === 'tancc') prims.push({ id, type: 'tangent_cc', c1_id: `c${i}`, c2_id: `c${j}` });
+    else if (k.k === 'conc') prims.push({ id, type: 'p2p_coincident', p1_id: `cc${i}`, p2_id: `cc${j}` });
+    else if (k.k === 'eqr') prims.push({ id, type: 'equal_radius_cc', c1_id: `c${i}`, c2_id: `c${j}` });
+    else prims.push({ id, type: 'circle_radius', c_id: `c${i}`, radius: k.v });
+  });
+  return prims;
+}
+type DW = W & { gcs?: { dof?: () => number } };
+/** Degrees of freedom left in the circles (centre x, y and radius each) under the circle constraints, with lines held fixed. Works on the numbers only, nothing is written back. -1 when the solver gives none or the constraints conflict. */
+export function dofCircles(w: DW, lines: L[], circles: C[], cons: CCon[]): number {
+  w.clear_data(); w.push_primitives_and_params(buildPrims(lines, circles, cons));
+  const status = w.solve(); const bad = w.has_gcs_conflicting_constraints?.() ?? false;
+  const dof = w.gcs?.dof?.(); return status === 0 && !bad && typeof dof === 'number' && isFinite(dof) ? dof : -1;
+}
+const solved = (w: DW, lines: L[], circles: C[], cons: CCon[], bump: number): { x: number; y: number; r: number }[] | null => {
+  w.clear_data(); w.push_primitives_and_params(buildPrims(lines, circles, cons, bump));
+  const status = w.solve(); const bad = w.has_gcs_conflicting_constraints?.() ?? false; w.apply_solution(); if (status !== 0 || bad) return null;
+  const out = w.sketch_index.get_primitives();
+  const r = circles.map((_, i) => { const p = out.find((q: any) => q.id === `cc${i}`), c = out.find((q: any) => q.id === `c${i}`); return p && c ? { x: p.x, y: p.y, r: c.radius } : null; });
+  return r.every((q) => q && isFinite(q.x) && isFinite(q.y) && isFinite(q.r)) ? (r as { x: number; y: number; r: number }[]) : null;
+};
+/** Per circle: true when the circle constraints already fix its centre and radius. Test: start that circle slightly off and solve again; a circle that comes back to the same centre and radius is fixed, one that stays where it was pushed is not. Works on the numbers only. */
+export function circleFixedMarks(w: DW, lines: L[], circles: C[], cons: CCon[]): boolean[] {
+  const ref = solved(w, lines, circles, cons, -1); if (!ref) return circles.map(() => false);
+  return circles.map((_, i) => { const t = solved(w, lines, circles, cons, i); if (!t) return false; const s = Math.max(1, ref[i].r); return Math.hypot(t[i].x - ref[i].x, t[i].y - ref[i].y) < 1e-6 * s && Math.abs(t[i].r - ref[i].r) < 1e-6 * s; });
+}
