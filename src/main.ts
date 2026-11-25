@@ -7,7 +7,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
-import { SketchPat, SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
+import { nearestOnArc, SketchPat, SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -77,8 +77,9 @@ function applyPointRels() {
   for (const c of cons) { const k = c.k as string; if (!PT_KINDS.includes(k)) continue; const pe = c.l as unknown as PointE, tg = c.m as unknown as Entity; if (!sketch.includes(pe as unknown as Entity) || !sketch.includes(tg)) continue;
     if (k === 'pcoin') { const ln = tg as unknown as { a: P; b: P }; const q = (c.v ?? 0) ? ln.b : ln.a; pe.p = { x: q.x, y: q.y }; }
     else if (k === 'pcol') { const ln = tg as unknown as { a: P; b: P }; const dx = ln.b.x - ln.a.x, dy = ln.b.y - ln.a.y, L2 = dx * dx + dy * dy; if (L2 > 1e-12) { const u = ((pe.p.x - ln.a.x) * dx + (pe.p.y - ln.a.y) * dy) / L2; pe.p = { x: ln.a.x + u * dx, y: ln.a.y + u * dy }; } }
+    else if (k === 'pcoa') { const ar = tg as unknown as { a: P; b: P; m: P }; const q = nearestOnArc(pe.p, ar.a, ar.b, ar.m); if (q) pe.p = q; }
     else { const ci = tg as unknown as { c: P; r: number }; const dx = pe.p.x - ci.c.x, dy = pe.p.y - ci.c.y, d = Math.hypot(dx, dy); if (d > 1e-9) pe.p = { x: ci.c.x + dx / d * ci.r, y: ci.c.y + dy / d * ci.r }; } } }
-const PT_KINDS = ['pcoin', 'pcol', 'pcoc'];
+const PT_KINDS = ['pcoin', 'pcol', 'pcoc', 'pcoa'];
 async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); applyPointRels(); }
 async function solveAll0(lines: L[], all: Con[]): Promise<void> {
   await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
@@ -255,9 +256,9 @@ sk.addEventListener('pointerdown', (e) => {
     for (const e of sketch) if (e.t === 'line') for (const k of [0, 1]) { const q = k ? e.b : e.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd2) { bd2 = d; best = { l: e, e: k }; } }
     if (!best) {
       const tol = (10 * devicePixelRatio) / cam.s; let tg: Entity | null = null, kk = '', bd3 = tol;
-      for (const e of sketch) { if (e.t === 'line') { const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue; const u = Math.max(0, Math.min(1, ((pr.x - e.a.x) * dx + (pr.y - e.a.y) * dy) / L2)); const d = Math.hypot(pr.x - (e.a.x + u * dx), pr.y - (e.a.y + u * dy)); if (d < bd3) { bd3 = d; tg = e; kk = 'pcol'; } } else if (e.t === 'circle') { const d = Math.abs(Math.hypot(pr.x - e.c.x, pr.y - e.c.y) - e.r); if (d < bd3) { bd3 = d; tg = e; kk = 'pcoc'; } } }
-      if (!tg) { msg('Click near a line end point, a line or a circle.'); return; }
-      const c2: Con = { k: kk as Con['k'], l: ptPick as unknown as L, m: tg as unknown as L }; ptPick = null; cons.push(c2); applyPointRels(); ck(); msg(kk === 'pcol' ? 'Point on line: it is projected onto the line and follows it (one-way).' : 'Point on circle: it is moved onto the circle and follows it (one-way).'); props(); draw(); return;
+      for (const e of sketch) { if (e.t === 'line') { const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue; const u = Math.max(0, Math.min(1, ((pr.x - e.a.x) * dx + (pr.y - e.a.y) * dy) / L2)); const d = Math.hypot(pr.x - (e.a.x + u * dx), pr.y - (e.a.y + u * dy)); if (d < bd3) { bd3 = d; tg = e; kk = 'pcol'; } } else if (e.t === 'circle') { const d = Math.abs(Math.hypot(pr.x - e.c.x, pr.y - e.c.y) - e.r); if (d < bd3) { bd3 = d; tg = e; kk = 'pcoc'; } } else if (e.t === 'arc') { const q = nearestOnArc(pr, e.a, e.b, e.m); const d = q ? Math.hypot(pr.x - q.x, pr.y - q.y) : Infinity; if (d < bd3) { bd3 = d; tg = e; kk = 'pcoa'; } } }
+      if (!tg) { msg('Click near a line end point, a line, an arc or a circle.'); return; }
+      const c2: Con = { k: kk as Con['k'], l: ptPick as unknown as L, m: tg as unknown as L }; ptPick = null; cons.push(c2); applyPointRels(); ck(); msg(kk === 'pcol' ? 'Point on line: it is projected onto the line and follows it (one-way).' : kk === 'pcoa' ? 'Point on arc: it is moved to the nearest spot of the arc (the end point when it is outside the arc span) and follows it (one-way).' : 'Point on circle: it is moved onto the circle and follows it (one-way).'); props(); draw(); return;
     }
     const c: Con = { k: 'pcoin' as Con['k'], l: ptPick as unknown as L, m: best.l as unknown as L, v: best.e }; ptPick = null; cons.push(c); applyPointRels(); ck(); msg('Point attached: it now follows that line end (one-way: the line does not follow the Point).'); props(); draw(); return;
   }
