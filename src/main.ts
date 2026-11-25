@@ -871,6 +871,7 @@ function snapshotSrc(): SketchSrc | null {
 function restoreSrc(s: SketchSrc) {
   sketch = clone(s.ents); pats = (s.pats ?? []).map((p: SketchPat) => ({ k: p.k, src: p.src.map((i) => sketch[i]), cp: p.cp.map((g) => g.map((i) => (i >= 0 ? sketch[i] : undefined))), tf: p.tf.map((r) => [...r]) })).filter((p) => p.src.every(Boolean)); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos, ...(d.x ? { x: d.x } : {}), ...(d.v !== undefined ? { v: d.v } : {}) })); params = (s.prm ?? []).map((q) => ({ ...q }));
   cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.n !== undefined ? { n: sketch[c.n] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
+  for (const c of cons) { if ((c.k as string) !== 'pcoin') continue; const pe = c.l as unknown as PointE, ln = c.m as unknown as { a: P; b: P }; if (!pe?.p || !ln?.a) continue; const q = (c.v ?? 0) ? ln.b : ln.a; pcoinLast.set(c, { pt: { ...pe.p }, end: { x: q.x, y: q.y } }); }
 }
 function startSketch(from?: Entity[], src?: SketchSrc | null) { pats = []; selE = []; hist = []; redoS = []; cons = []; dims = []; params = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
