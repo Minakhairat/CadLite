@@ -83,8 +83,8 @@ export function arcConstraintNote(kinds: string[]): string {
   if (has('tanla')) held.push('tangent to a line');
   if (has('aconc')) held.push('concentric');
   if (has('aeqr')) held.push('equal radius');
-  if (!held.length) return 'No arc constraint stored. Degrees of freedom are not counted for arcs.';
-  return `Stored: ${held.join(', ')}. The arc end points are NOT constrained and degrees of freedom are not counted for arcs.`;
+  if (!held.length) return 'No arc constraint stored. Arc own DOF is shown below.';
+  return `Stored: ${held.join(', ')}. The arc end points are NOT constrained. Arc own DOF is shown below; it is not combined with line DOF.`;
 }
 
 /** Two-way Point on end point. Decide who moved since the relation was last applied. 'drive': only the Point moved and the line may follow, so the line end takes the Point's place. 'follow': the line end moved (or both did, or the line must not move), so the Point goes back to the line end. */
