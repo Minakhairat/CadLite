@@ -29,7 +29,7 @@ export function transformEntity(e: Entity, f: Tf): Entity {
     case 'line': return { t: 'line', a: f(e.a), b: f(e.b) };
     case 'arc': return { t: 'arc', a: f(e.a), b: f(e.b), m: f(e.m) };
     case 'circle': return { t: 'circle', c: f(e.c), r: e.r };
-    case 'poly': return { t: 'poly', pts: e.pts.map(f), ...(e.ell ? { ell: ellTransform(e.ell, f) } : {}), ...(e.segs ? { segs: e.segs.map((s) => ({ a: f(s.a), b: f(s.b), ...(s.m ? { m: f(s.m) } : {}) })) } : {}) };
+    case 'poly': return { t: 'poly', pts: e.pts.map(f), ...(e.ell ? { ell: ellTransform(e.ell, f) } : {}), ...(e.spl ? { spl: e.spl.map(f) } : {}), ...(e.segs ? { segs: e.segs.map((s) => ({ a: f(s.a), b: f(s.b), ...(s.m ? { m: f(s.m) } : {}) })) } : {}) };
     case 'rect': {
       const c = [{ x: e.a.x, y: e.a.y }, { x: e.b.x, y: e.a.y }, { x: e.b.x, y: e.b.y }, { x: e.a.x, y: e.b.y }].map(f);
       if (c.every((p, i) => aligned(p, c[(i + 1) % 4]))) return { t: 'rect', a: c[0], b: c[2] };
@@ -62,7 +62,7 @@ export function stretchEntity(e: Entity, w: Win, dx: number, dy: number): Entity
   const f: Tf = (p) => (inWin(w, p) ? { x: p.x + dx, y: p.y + dy } : p);
   if (e.t === 'circle') return inWin(w, e.c) ? transformEntity(e, moveTf(dx, dy)) : e;
   if (e.t === 'arc') { const ia = inWin(w, e.a), ib = inWin(w, e.b); if (ia && ib) return transformEntity(e, moveTf(dx, dy)); return ia || ib ? null : e; }
-  if (e.t === 'poly' && (e.ell || (e.segs && e.segs.some((s) => s.m)))) { const ins = e.pts.filter((p) => inWin(w, p)).length; return ins === 0 ? e : ins === e.pts.length ? transformEntity(e, moveTf(dx, dy)) : null; }
+  if (e.t === 'poly' && (e.ell || e.spl || (e.segs && e.segs.some((s) => s.m)))) { const ins = e.pts.filter((p) => inWin(w, p)).length; return ins === 0 ? e : ins === e.pts.length ? transformEntity(e, moveTf(dx, dy)) : null; }
   const pts = isPt(e) ? [(e as PointE).p] : e.t === 'line' ? [e.a, e.b] : e.t === 'rect' ? [e.a, e.b, { x: e.a.x, y: e.b.y }, { x: e.b.x, y: e.a.y }] : e.pts;
   return pts.some((p) => inWin(w, p)) ? transformEntity(e, f) : e;
 }
