@@ -1,5 +1,5 @@
 import { make_gcs_wrapper } from '@salusoft89/planegcs';
-import { solveCircles, C } from './circle-solver-core';
+import { solveCircles, circleFixedMarks, dofCircles, C } from './circle-solver-core';
 import type { L } from './solver-core';
 import { writeFileSync } from 'node:fs';
 const log: string[] = []; let fails = 0;
@@ -20,4 +20,11 @@ const dist = (l: L, c: C) => Math.abs((l.b.x - l.a.x) * (l.a.y - c.c.y) - (l.a.x
 { const a: C = { c: P(0, 0), r: 5 }; let t = false; try { solveCircles(w, [], [a], [{ k: 'rad', c: a, v: 5 }, { k: 'rad', c: a, v: 6 }]); } catch { t = true; } log.push(`${t ? 'PASS' : 'FAIL'} conflicting radii reported`); if (!t) fails++; }
 // 7) the second circle is the reference: concentric moves only the first; equal radius changes only the first
 { const a: C = { c: P(0, 0), r: 5 }, b: C = { c: P(30, 7), r: 8 }; solveCircles(w, [], [a, b], [{ k: 'conc', c: a, d: b }, { k: 'eqr', c: a, d: b }]); near(a.c.x, 30, 1e-6, 'first circle moved onto second (x)'); near(a.c.y, 7, 1e-6, 'first circle moved onto second (y)'); near(a.r, 8, 1e-6, 'first took second radius'); near(b.c.x, 30, 1e-9, 'second centre unchanged x'); near(b.c.y, 7, 1e-9, 'second centre unchanged y'); near(b.r, 8, 1e-9, 'second radius unchanged'); }
+// 8) degrees of freedom: radius alone leaves the centre free (3 circle parameters, 1 removed -> 2); tangent to two crossing lines plus a radius fixes the circle; without the radius one is left
+{ const a: C = { c: P(10, 10), r: 5 }; near(dofCircles(w, [], [a], [{ k: 'rad', c: a, v: 5 }]), 2, 0, 'radius only: 2 degrees of freedom left'); log.push(`${circleFixedMarks(w, [], [a], [{ k: 'rad', c: a, v: 5 }])[0] === false ? 'PASS' : 'FAIL'} radius only is not fully fixed`); if (circleFixedMarks(w, [], [a], [{ k: 'rad', c: a, v: 5 }])[0] !== false) fails++; }
+{ const l1: L = { a: P(0, 0), b: P(40, 0) }, l2: L = { a: P(0, 0), b: P(0, 40) }, a: C = { c: P(6, 6), r: 5 };
+  const withR = [{ k: 'tanlc' as const, c: a, l: l1 }, { k: 'tanlc' as const, c: a, l: l2 }, { k: 'rad' as const, c: a, v: 5 }];
+  const okW = circleFixedMarks(w, [l1, l2], [a], withR)[0] === true; log.push(`${okW ? 'PASS' : 'FAIL'} tangent to two lines plus radius: fully fixed`); if (!okW) fails++;
+  const okN = circleFixedMarks(w, [l1, l2], [a], withR.slice(0, 2))[0] === false; log.push(`${okN ? 'PASS' : 'FAIL'} tangent to two lines without radius: not fixed`); if (!okN) fails++;
+  near(dofCircles(w, [l1, l2], [a], withR.slice(0, 2)), 1, 0, 'tangent to two lines: 1 degree of freedom left'); }
 writeFileSync('/tmp/circle-solver-result.txt', log.join('\n') + '\n'); console.log(log.join('\n')); process.exit(fails ? 1 : 0);
