@@ -7,7 +7,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
-import { nearestOnArc, SketchPat, SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
+import { nearestOnArc, SketchPat, SketchSrc, Entity, Feature, P, filletCorner, chamferCorner, chamferDistAngle, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -16,11 +16,11 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'slotca' | 'slot3a' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'slotca' | 'slot3a' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'sch1' | 'sch2' | 'sch3' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
-let filPt: P | null = null; let filR = 2;
+let filPt: P | null = null; let filR = 2; let chmPt: P | null = null; let chmStage = 0; let chmV1 = 0;
 type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
 let dims: Dim[] = [];
 let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
@@ -319,14 +319,16 @@ sk.addEventListener('pointerdown', (e) => {
     try { const parts = trimLine(l, others, pr); sketch.splice(bi, 1, ...parts.map((q) => ({ t: 'line' as const, a: q.a, b: q.b }))); msg(parts.length ? 'Trimmed.' : 'Line removed (it had no crossing).'); props(); draw(); } catch (er) { msg((er as Error).message); }
     return;
   }
-  if (tool === 'sfil') {
+  if (tool === 'sfil' || tool === 'sch1' || tool === 'sch2' || tool === 'sch3') {
+    const isCh = tool !== 'sfil'; const nm = isCh ? 'Chamfer' : 'Fillet';
     const tol = (14 * devicePixelRatio) / cam.s; let best: P | null = null; let bd = tol;
     for (const e of sketch) if (e.t === 'line') for (const q of [e.a, e.b]) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = { ...q }; } }
-    if (!best) { msg('Fillet: click a corner where two lines meet.'); return; }
+    if (!best) { msg(nm + ': click a corner where two lines meet.'); return; }
     const n = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - best!.x, q.y - best!.y) < 1e-6)).length;
-    if (n !== 2) { msg(n < 2 ? 'Fillet: that point is not a corner of two lines.' : 'Fillet: more than two lines meet there.'); return; }
-    filPt = best; dimTarget = null; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
-    const inp = $<HTMLInputElement>('dimin'); inp.value = String(filR); msg('Fillet radius (mm): type the value, then OK or Enter.'); setTimeout(() => { inp.focus(); inp.select(); }, 0); return;
+    if (n !== 2) { msg(n < 2 ? nm + ': that point is not a corner of two lines.' : nm + ': more than two lines meet there.'); return; }
+    if (isCh) { const cl = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - best!.x, q.y - best!.y) < 1e-6)); if (cl.some((l) => usedByCon(l))) { msg('Chamfer: lines with constraints or dimensions are refused (it would break them).'); return; } }
+    if (isCh) { chmPt = best; chmStage = 0; filPt = null; } else { filPt = best; chmPt = null; } dimTarget = null; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px';
+    const inp = $<HTMLInputElement>('dimin'); inp.value = isCh ? '2' : String(filR); msg(isCh ? (tool === 'sch1' ? 'Chamfer distance (mm, both sides): type the value, then OK or Enter.' : 'Chamfer distance 1 (mm, along the first line of the corner): type it, then OK or Enter.') : 'Fillet radius (mm): type the value, then OK or Enter.'); setTimeout(() => { inp.focus(); inp.select(); }, 0); return;
   }
   if (tool === 'dim') {
     const h = dimHit(p); if (!h) { msg('Dimension: click a line, circle, arc or rectangle edge.'); return; }
@@ -512,7 +514,22 @@ const commitRegular = () => {
   for (let i = 0; i < n; i++) pts.push({ x: q.c.x + r * Math.cos(a0 + (2 * Math.PI * i) / n), y: q.c.y + r * Math.sin(a0 + (2 * Math.PI * i) / n) });
   sketch.push({ t: 'poly', pts }); regN = n; regPts = null; $('dimbox').style.display = 'none'; props(); draw(); msg(q.circ ? `Regular polygon added: ${n} sides, circumscribed about a circle of radius ${+r0.toFixed(3)} mm (circumradius ${+r.toFixed(3)} mm).` : `Regular polygon added: ${n} sides, circumradius ${+r.toFixed(3)} mm (inscribed, first vertex at the click).`);
 };
+const commitChamfer = () => {
+  const P0 = chmPt!; const v = parseFloat($<HTMLInputElement>('dimin').value);
+  try {
+    if (!(v > 0)) throw new Error('The value must be greater than 0.');
+    if (chmStage === 0 && tool !== 'sch1') { chmV1 = v; chmStage = 1; const inp = $<HTMLInputElement>('dimin'); inp.value = tool === 'sch2' ? '3' : '45'; msg(tool === 'sch2' ? 'Chamfer distance 2 (mm, along the second line): type it, then OK or Enter.' : 'Chamfer angle (degrees from the first line): type it, then OK or Enter.'); setTimeout(() => { inp.focus(); inp.select(); }, 0); return; }
+    const ls = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - P0.x, q.y - P0.y) < 1e-6)) as Extract<Entity, { t: 'line' }>[];
+    const far = (l: Extrude_L) => (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6 ? l.b : l.a);
+    const d1 = tool === 'sch1' ? v : chmV1; const d2 = tool === 'sch1' ? v : tool === 'sch2' ? v : chamferDistAngle(P0, far(ls[0]), far(ls[1]), chmV1, v);
+    const f = chamferCorner(P0, far(ls[0]), far(ls[1]), d1, d2);
+    const set = (l: Extrude_L, q: P) => { if (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6) l.a = { ...q }; else l.b = { ...q }; };
+    set(ls[0], f.t1); set(ls[1], f.t2); sketch.push({ t: 'line', a: { ...f.t1 }, b: { ...f.t2 } } as Entity); msg(`Chamfer ${+d1.toFixed(3)} x ${+d2.toFixed(3)} mm added.`); props();
+  } catch (er) { msg((er as Error).message); return; }
+  chmPt = null; chmStage = 0; $('dimbox').style.display = 'none'; draw();
+};
 const commitDim = () => {
+  if (chmPt) { commitChamfer(); return; }
   if (regPts) { commitRegular(); return; }
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
@@ -522,7 +539,7 @@ const commitDim = () => {
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
 $('dimok').onclick = commitDim;
-$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; filPt = null; regPts = null; $('dimbox').style.display = 'none'; } });
+$('dimin').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commitDim(); if (ev.key === 'Escape') { dimTarget = null; filPt = null; chmPt = null; chmStage = 0; regPts = null; $('dimbox').style.display = 'none'; } });
 const ctxm = $('ctxm');
 const endTool = (exitTool: boolean) => { polyPts = []; segPts = []; drag = null; if (exitTool) { tool = 'none'; refreshButtons(); } ctxm.style.display = 'none'; draw(); };
 sk.addEventListener('contextmenu', (e) => { e.preventDefault(); if (mode !== 'sketch') return; const r = $('gfx').getBoundingClientRect(); ctxm.style.left = e.clientX - r.left + 'px'; ctxm.style.top = e.clientY - r.top + 'px'; ctxm.style.display = 'block'; });
@@ -900,7 +917,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; ctan3Pick = []; arctStart = null; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; chmPt = null; chmStage = 0; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; ctan3Pick = []; arctStart = null; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
