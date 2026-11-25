@@ -585,7 +585,7 @@ function xApply() {
     if (xop === 'stretch') {
       const v = ['xa', 'xb', 'xc', 'xd', 'xe', 'xf2'].map(xf); if (!v.every(Number.isFinite)) return bad('Enter numbers.');
       const W = { x0: v[0], y0: v[1], x1: v[2], y1: v[3] }; const res = sel0.map((e) => stretchEntity(e, W, v[4], v[5]));
-      if (res.some((r) => !r)) return bad('Stretch: the window cuts through an arc, which is not supported yet. Move the window so it holds both ends of the arc or neither. Nothing changed.');
+      if (res.some((r) => !r)) return bad('Stretch: the window cuts through an arc or an exact ellipse, which is not supported yet. Move the window so it holds the whole shape or none of it. Nothing changed.');
       const chg = sel0.map((e, i) => (res[i] !== e ? i : -1)).filter((i) => i >= 0); if (!chg.length) return bad('Stretch: no point of the selected shapes is inside the window. Nothing changed.');
       if (chg.some((i) => usedByCon(sel0[i]))) return bad('A shape to stretch has constraints or dimensions, so it cannot be changed in place. Remove them first. Nothing changed.');
       const outs = chg.map((i) => res[i] as Entity); sketch = sketch.filter((e) => !chg.some((i) => sel0[i] === e)); sketch.push(...outs); selE = outs; $('xdlg').classList.remove('show'); props(); draw(); msg(`Stretched ${outs.length} shape(s).`); return;
