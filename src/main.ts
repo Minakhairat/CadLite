@@ -22,7 +22,7 @@ let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let 
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
 let filPt: P | null = null; let filR = 2; let chmPt: P | null = null; let chmStage = 0; let chmV1 = 0;
-type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P; x?: string };
+type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P; x?: string; v?: number };
 let dims: Dim[] = []; let params: Param[] = [];
 let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
 let segPts: P[] = []; // line chain start / arc clicks in progress
@@ -530,14 +530,19 @@ const commitChamfer = () => {
   chmPt = null; chmStage = 0; $('dimbox').style.display = 'none'; draw();
 };
 
+/** A dimension is broken when the geometry no longer has the value it was set to (its expression result, or the number it was given). */
+function brokenDim(d: Dim, vals: Record<string, number>): { want: number; got: number } | null {
+  if (!sketch.includes(d.e)) return null; const want = d.x ? evalExpr(d.x, vals) : d.v; if (want === undefined) return null;
+  const got = dimValue(d.e, d.w); return Math.abs(got - want) > 1e-6 * Math.max(1, Math.abs(want)) ? { want, got } : null;
+}
 /** Re-evaluate every dimension that keeps an expression and apply it. All or nothing: on any failure the sketch is restored. */
 function reapplyExprDims(): void {
   const vals = resolveParams(params); const before = JSON.stringify(snapshotSrc());
   try {
-    for (const d of dims) { if (!d.x || !sketch.includes(d.e)) continue; const v = evalExpr(d.x, vals); dimApply(d.e, d.w, v);
+    for (const d of dims) { if (!d.x || !sketch.includes(d.e)) continue; const v = evalExpr(d.x, vals); dimApply(d.e, d.w, v); d.v = v;
       if (d.e.t === 'line') { const ln = d.e as unknown as L; const lc = cons.find((c) => c.k === 'len' && c.l === ln); if (lc) lc.v = v; } }
     applyArcRels(); applyPointRels();
-    for (const d of dims) { if (!d.x || !sketch.includes(d.e)) continue; const want = evalExpr(d.x, vals), got = dimValue(d.e, d.w); if (Math.abs(got - want) > 1e-6 * Math.max(1, want)) throw new Error(`The dimension ${d.x} cannot be kept: dimensions that share end points disturb each other here (wanted ${+want.toFixed(4)}, got ${+got.toFixed(4)}).`); }
+    for (const d of dims) { const b = brokenDim(d, vals); if (b) throw new Error(`The dimension ${d.x ?? +b.want.toFixed(4)} cannot be kept: dimensions that share end points disturb each other here (wanted ${+b.want.toFixed(4)}, got ${+b.got.toFixed(4)}).`); }
   } catch (er) { restoreSrc(JSON.parse(before)); throw er; }
   solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => msg((er as Error).message));
 }
@@ -570,9 +575,11 @@ const commitDim = () => {
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
   let val: number; try { val = evalExpr(inp.value, resolveParams(params)); } catch (er0) { msg((er0 as Error).message); return; }
   const xt = /^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/.test(inp.value) ? undefined : inp.value.trim();
+  const snapBefore = JSON.stringify(fullSnap()); let conflict = false;
   try { dimApply(t.e, t.w, val); try { applyArcRels(); applyPointRels(); } catch (er2) { msg((er2 as Error).message); }
-    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: val }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } { const ex = dims.find((d) => d.e === t.e && d.w === t.w); if (!ex) dims.push({ e: t.e, w: t.w, pos: t.pos, ...(xt ? { x: xt } : {}) }); else if (xt) ex.x = xt; else delete ex.x; } msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
-  catch (er) { msg((er as Error).message); return; }
+    if (!cons.some((c) => c.k !== 'len')) { const vals0 = resolveParams(params); for (const d of dims) { if (d.e === t.e && d.w === t.w) continue; const b = brokenDim(d, vals0); if (b) { conflict = true; throw new Error(`Dimension refused: it would change another dimension (${d.x ?? +b.want.toFixed(4)} would become ${+b.got.toFixed(4)}) because they share end points. Nothing changed.`); } } }
+    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: val }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } { const ex = dims.find((d) => d.e === t.e && d.w === t.w); if (!ex) dims.push({ e: t.e, w: t.w, pos: t.pos, v: val, ...(xt ? { x: xt } : {}) }); else { ex.v = val; if (xt) ex.x = xt; else delete ex.x; } } msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
+  catch (er) { if (conflict) { restoreSrc(JSON.parse(snapBefore)); selE = []; dimTarget = null; $('dimbox').style.display = 'none'; props(); draw(); } msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
 $('dimok').onclick = commitDim;
@@ -732,7 +739,7 @@ function refreshPats() {
 }
 function fullSnap(): SketchSrc {
   refreshPats(); const ix = (o: unknown) => sketch.indexOf(o as Entity);
-  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos }, ...(d.x ? { x: d.x } : {}) })), ...(params.length ? { prm: params.map((q) => ({ ...q })) } : {}), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos }, ...(d.x ? { x: d.x } : {}), ...(d.v !== undefined ? { v: d.v } : {}) })), ...(params.length ? { prm: params.map((q) => ({ ...q })) } : {}), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
 }
 function ck() {
   if (restoring || mode !== 'sketch') return;
@@ -831,10 +838,10 @@ addEventListener('keydown', (e) => {
 function snapshotSrc(): SketchSrc | null {
   if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || isPt(e) || e.cn) && !cons.length && !dims.length && !pats.length && !params.length) return null;
   refreshPats(); const ix = (o: unknown) => sketch.indexOf(o as Entity);
-  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos }, ...(d.x ? { x: d.x } : {}) })), ...(params.length ? { prm: params.map((q) => ({ ...q })) } : {}), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos }, ...(d.x ? { x: d.x } : {}), ...(d.v !== undefined ? { v: d.v } : {}) })), ...(params.length ? { prm: params.map((q) => ({ ...q })) } : {}), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
 }
 function restoreSrc(s: SketchSrc) {
-  sketch = clone(s.ents); pats = (s.pats ?? []).map((p: SketchPat) => ({ k: p.k, src: p.src.map((i) => sketch[i]), cp: p.cp.map((g) => g.map((i) => (i >= 0 ? sketch[i] : undefined))), tf: p.tf.map((r) => [...r]) })).filter((p) => p.src.every(Boolean)); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos, ...(d.x ? { x: d.x } : {}) })); params = (s.prm ?? []).map((q) => ({ ...q }));
+  sketch = clone(s.ents); pats = (s.pats ?? []).map((p: SketchPat) => ({ k: p.k, src: p.src.map((i) => sketch[i]), cp: p.cp.map((g) => g.map((i) => (i >= 0 ? sketch[i] : undefined))), tf: p.tf.map((r) => [...r]) })).filter((p) => p.src.every(Boolean)); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos, ...(d.x ? { x: d.x } : {}), ...(d.v !== undefined ? { v: d.v } : {}) })); params = (s.prm ?? []).map((q) => ({ ...q }));
   cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.n !== undefined ? { n: sketch[c.n] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
 }
 function startSketch(from?: Entity[], src?: SketchSrc | null) { pats = []; selE = []; hist = []; redoS = []; cons = []; dims = []; params = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
