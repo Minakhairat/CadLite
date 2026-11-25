@@ -924,3 +924,16 @@ function physCard() {
 $('physbtn').onclick = physCard;
 (window as any).__cad.phys = physProps;
 (window as any).__cad.dof = () => dofVal;
+
+// Ribbon scroll affordance: edge arrows appear only when the ribbon is wider than the window.
+(() => {
+  const rb = document.getElementById('ribbon'); if (!rb || !rb.parentElement) return;
+  const wrap = document.createElement('div'); wrap.id = 'ribwrap'; wrap.style.cssText = 'position:relative';
+  rb.parentElement.insertBefore(wrap, rb); wrap.appendChild(rb);
+  const mk = (id: string, label: string, side: string, dir: number) => { const b = document.createElement('button'); b.id = id; b.type = 'button'; b.textContent = label; b.setAttribute('aria-label', dir < 0 ? 'Scroll ribbon left' : 'Scroll ribbon right');
+    b.style.cssText = `position:absolute;top:0;${side}:0;height:100%;width:26px;border:0;background:rgba(30,60,110,.78);color:#fff;font-size:20px;cursor:pointer;display:none;z-index:5`;
+    b.onclick = () => rb.scrollBy({ left: dir * Math.max(200, rb.clientWidth * 0.6), behavior: 'smooth' }); wrap.appendChild(b); return b; };
+  const l = mk('ribL', '‹', 'left', -1), r = mk('ribR', '›', 'right', 1);
+  const upd = () => { l.style.display = rb.scrollLeft > 2 ? 'block' : 'none'; r.style.display = rb.scrollLeft + rb.clientWidth < rb.scrollWidth - 2 ? 'block' : 'none'; };
+  rb.addEventListener('scroll', upd); addEventListener('resize', upd); document.addEventListener('click', () => setTimeout(upd, 80)); setTimeout(upd, 300); setTimeout(upd, 1500);
+})();
