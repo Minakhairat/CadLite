@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -394,6 +394,17 @@ sk.addEventListener('pointerdown', (e) => {
       if (b < 1e-9) { msg('Ellipse: the minor point is on the major axis. Click off the axis.'); draw(); return; }
       const pts: P[] = []; for (let i = 0; i < 72; i++) { const t = (i / 72) * 2 * Math.PI; pts.push({ x: c.x + u.x * a * Math.cos(t) + v.x * b * Math.sin(t), y: c.y + u.y * a * Math.cos(t) + v.y * b * Math.sin(t) }); }
       sketch.push({ t: 'poly', pts, ell: { c: { ...c }, a, b, rot: (Math.atan2(u.y, u.x) * 180) / Math.PI } }); props(); msg(`Ellipse added: semi-axes ${a.toFixed(2)} and ${b.toFixed(2)} mm. Not parametric.`); }
+    hover = p; draw(); return;
+  }
+  if (tool === 'slotov') {
+    segPts.push(p);
+    if (segPts.length === 2) { if (Math.hypot(segPts[1].x - segPts[0].x, segPts[1].y - segPts[0].y) < 1e-9) { segPts = []; msg('Slot: the two end points must be different points.'); draw(); return; } msg('Now click a point at the slot half-width from the centre line.'); }
+    if (segPts.length === 3) { const [e1, e2, q] = segPts; segPts = []; const L = Math.hypot(e2.x - e1.x, e2.y - e1.y), d = { x: (e2.x - e1.x) / L, y: (e2.y - e1.y) / L }, nn = { x: -d.y, y: d.x }; const wd = Math.abs((q.x - e1.x) * nn.x + (q.y - e1.y) * nn.y);
+      if (wd < 1e-9) { msg('Slot: the width point is on the centre line. Click off the line.'); draw(); return; }
+      if (L < 2 * wd + 1e-9) { msg(`Slot: the overall length ${+L.toFixed(3)} mm must be longer than the width ${+(2 * wd).toFixed(3)} mm.`); draw(); return; }
+      const c1 = { x: e1.x + d.x * wd, y: e1.y + d.y * wd }, c2 = { x: e2.x - d.x * wd, y: e2.y - d.y * wd };
+      const A1 = { x: c1.x + nn.x * wd, y: c1.y + nn.y * wd }, A2 = { x: c2.x + nn.x * wd, y: c2.y + nn.y * wd }, B2 = { x: c2.x - nn.x * wd, y: c2.y - nn.y * wd }, B1 = { x: c1.x - nn.x * wd, y: c1.y - nn.y * wd };
+      sketch.push({ t: 'line', a: A1, b: A2 }, { t: 'arc', a: A2, b: B2, m: { x: c2.x + d.x * wd, y: c2.y + d.y * wd } }, { t: 'line', a: B2, b: B1 }, { t: 'arc', a: B1, b: A1, m: { x: c1.x - d.x * wd, y: c1.y - d.y * wd } }); props(); draw(); msg(`Slot added: overall length ${L.toFixed(3)} mm, width ${(2 * wd).toFixed(3)} mm.`); }
     hover = p; draw(); return;
   }
   if (tool === 'slot') {
