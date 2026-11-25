@@ -49,7 +49,7 @@ if (stretchEntity(el, { x0: 22, y0: 0, x1: 30, y1: 20 }, 3, 0) !== null) { conso
 near((stretchEntity(el, { x0: 0, y0: 0, x1: 50, y1: 50 }, 3, 1) as any).ell.c.x, 23, 1e-9, 'stretch window around the whole ellipse moves it');
 {
   const n0 = arcConstraintNote([]); const n1 = arcConstraintNote(['tanla', 'aeqr', 'xyz']);
-  if (!n0.includes('No arc constraint') || !n0.includes('not counted')) { console.error('FAIL arc note empty', n0); process.exit(1); }
+  if (!n0.includes('No arc constraint') || !n0.includes('Arc own DOF')) { console.error('FAIL arc note empty', n0); process.exit(1); }
   if (!n1.includes('tangent to a line') || !n1.includes('equal radius') || n1.includes('concentric') || !n1.includes('NOT constrained')) { console.error('FAIL arc note kinds', n1); process.exit(1); }
   console.log('ok arc constraint notes');
 }
