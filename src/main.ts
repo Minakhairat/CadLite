@@ -79,6 +79,8 @@ function applyArcRels() {
     const rc = ref.t === 'arc' ? circle3(ref.a, ref.b, ref.m) : ref.t === 'circle' ? { c: ref.c, r: ref.r } : null, ac = circle3(arc.a, arc.b, arc.m); if (!rc || !ac) throw new Error('An arc constraint cannot be checked.');
     const bad = k === 'aconc' ? Math.hypot(ac.c.x - rc.c.x, ac.c.y - rc.c.y) > 1e-6 * Math.max(1, rc.r) : Math.abs(ac.r - rc.r) > 1e-6 * Math.max(1, rc.r);
     if (bad) throw new Error('These arc constraints conflict: they cannot all be true for the same arc. Nothing was kept.'); }
+  for (const c of cons) { if ((c.k as string) !== 'aend') continue; const arc = c.l as unknown as Entity, ln = c.m as unknown as Entity; if (!sketch.includes(arc) || !sketch.includes(ln) || arc.t !== 'arc' || ln.t !== 'line') continue; const v = c.v ?? 0, q = (v & 1) ? ln.b : ln.a, o2 = (v >> 1 & 1) ? arc.b : arc.a;
+    if (Math.hypot(o2.x - q.x, o2.y - q.y) > 1e-6) throw new Error('The arc end can no longer stay on its line end because of another arc constraint. Nothing was kept.'); }
 }
 let dofVal: number | null = null, dofSeq = 0, dofFixed = new Set<L>();
 let dofCircFixed = new Set<Entity>(), dofCircSeq = 0;
@@ -740,7 +742,7 @@ function tree() {
     node(`Sketch${i + 1}`, 2, 's', () => { sel = i; rebuild(); tree(); refreshButtons(); }, () => editFeature(i), sel === i);
   });
   node('End of Part', 1, 'e');
-  if (pending) node('Sketch (not used yet)', 1, 's');
+  if (pending) node('Sketch (not used yet)', 1, 's', undefined, () => { if (mode === 'model') { editing = null; pickPlane(curPlane); } });
   if (mode === 'sketch') node(editing !== null ? `Editing Sketch${editing + 1}` : 'Sketch in progress', 1, 's', undefined, undefined, true);
 }
 function numField(label: string, v: number, on: (n: number) => void) {
@@ -762,7 +764,7 @@ function props() {
     } else if (e.t === 'circle') {
       title(`Circle ${i + 1}`); g.append(numField('Center X (mm)', e.c.x, (n) => (e.c.x = n)), numField('Center Y (mm)', e.c.y, (n) => (e.c.y = n)), numField('Radius (mm)', e.r, (n) => n > 0 && (e.r = n)));
     } else if (e.t === 'line') title(`Line ${i + 1} (${Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y).toFixed(2)} mm)`);
-    else if (e.t === 'arc') { title(`Arc ${i + 1} (3-point)`); const nt = document.createElement('div'); nt.className = 'arcnote'; nt.style.cssText = 'font-size:11px;color:#5b6773;margin:2px 0'; nt.textContent = arcConstraintNote(cons.filter((c) => (c.l as unknown) === e || (c.m as unknown) === e).map((c) => c.k as string)); r.append(nt); const dn = document.createElement('div'); dn.className = 'arcdof'; dn.style.cssText = 'font-size:11px;font-weight:600;color:#34506f;margin:2px 0'; { const ks = cons.filter((c) => (c.l as unknown) === e).map((c) => c.k as string); const cnt = (k: string) => ks.filter((x) => x === k).length; dn.textContent = `Relations stored on this arc: ${cnt('tanla')} tangent to a line, ${cnt('aconc')} concentric, ${cnt('aeqr')} equal radius. Arc DOF: NOT solved yet (no independent-rank solver for arcs); this is only a tally of what is stored.`; } r.append(dn); }
+    else if (e.t === 'arc') { title(`Arc ${i + 1} (3-point)`); const nt = document.createElement('div'); nt.className = 'arcnote'; nt.style.cssText = 'font-size:11px;color:#5b6773;margin:2px 0'; nt.textContent = arcConstraintNote(cons.filter((c) => (c.l as unknown) === e || (c.m as unknown) === e).map((c) => c.k as string)); r.append(nt); const dn = document.createElement('div'); dn.className = 'arcdof'; dn.style.cssText = 'font-size:11px;font-weight:600;color:#34506f;margin:2px 0'; { const ks = cons.filter((c) => (c.l as unknown) === e).map((c) => c.k as string); const cnt = (k: string) => ks.filter((x) => x === k).length; dn.textContent = `Relations stored on this arc: ${cnt('tanla')} tangent to a line, ${cnt('aconc')} concentric, ${cnt('aeqr')} equal radius, ${cnt('aend')} end on a line end. Arc DOF: NOT solved yet (no independent-rank solver for arcs); this is only a tally of what is stored.`; } r.append(dn); }
     else if (isPt(e)) { const pe = e as PointE; title(`Point ${i + 1}`); g.append(numField('X (mm)', pe.p.x, (n) => (pe.p.x = n)), numField('Y (mm)', pe.p.y, (n) => (pe.p.y = n))); }
     else title(`Polygon ${i + 1} (${e.pts.length} points)`);
     const role = patRole(e);
