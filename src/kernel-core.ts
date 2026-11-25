@@ -20,6 +20,7 @@ export function extrudeSolid(R: R, sketch: Entity[], h: number, z0: number): Rep
   const make = (e: Entity): Replicad.Shape3D => {
     if (e.t === 'rect') return R.makeBox([Math.min(e.a.x, e.b.x), Math.min(e.a.y, e.b.y), z0], [Math.max(e.a.x, e.b.x), Math.max(e.a.y, e.b.y), z0 + h]);
     if (e.t === 'circle') return R.makeCylinder(e.r, h, [e.c.x, e.c.y, z0], [0, 0, 1]);
+    if (e.t === 'poly' && e.ell) { const q = e.ell; let dr: any = (R as any).drawEllipse(q.a, q.b); if (q.rot) dr = dr.rotate(q.rot, [0, 0]); return dr.translate(q.c.x, q.c.y).sketchOnPlane('XY', z0).extrude(h) as Replicad.Shape3D; }
     let d: any;
     if (e.t === 'poly' && e.segs?.length) { // true arcs: keep arc edges exact
       d = R.draw([e.segs[0].a.x, e.segs[0].a.y]);
