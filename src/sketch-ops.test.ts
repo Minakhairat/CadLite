@@ -1,4 +1,4 @@
-import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity, stretchEntity, arcConcentric, arcEqualRadius, arcConstraintNote } from './sketch-ops';
+import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity, stretchEntity, arcConcentric, arcEqualRadius, arcConstraintNote, pointEndStep } from './sketch-ops';
 import { circle3, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (!(Math.abs(a - b) <= tol)) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(4)); };
 const line: Entity = { t: 'line', a: { x: 1, y: 2 }, b: { x: 4, y: 6 } };
@@ -52,4 +52,14 @@ near((stretchEntity(el, { x0: 0, y0: 0, x1: 50, y1: 50 }, 3, 1) as any).ell.c.x,
   if (!n0.includes('No arc constraint') || !n0.includes('not counted')) { console.error('FAIL arc note empty', n0); process.exit(1); }
   if (!n1.includes('tangent to a line') || !n1.includes('equal radius') || n1.includes('concentric') || !n1.includes('NOT constrained')) { console.error('FAIL arc note kinds', n1); process.exit(1); }
   console.log('ok arc constraint notes');
+}
+{
+  const P0 = { x: 0, y: 0 }, P1 = { x: 5, y: 5 }; const last = { pt: P0, end: P0 };
+  const r = (a: string, b: string, m: string) => { if (a !== b) { console.error('FAIL pointEndStep', m, a); process.exit(1); } console.log('ok pointEndStep', m); };
+  r(pointEndStep(undefined, P1, P0, false), 'follow', 'no history: the line wins');
+  r(pointEndStep(last, P1, P0, false), 'drive', 'only the Point moved: drive the line end');
+  r(pointEndStep(last, P0, P1, false), 'follow', 'only the line moved: the Point follows');
+  r(pointEndStep(last, P1, P1, false), 'follow', 'both moved: the line wins');
+  r(pointEndStep(last, P1, P0, true), 'follow', 'line locked (dimension): the Point goes back');
+  r(pointEndStep(last, { x: 1e-12, y: 0 }, P0, false), 'follow', 'rounding noise is not a move');
 }
