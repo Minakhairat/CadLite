@@ -334,7 +334,7 @@ sk.addEventListener('pointerdown', (e) => {
     if (segPts.length === 3) { const [c, e1, q] = segPts; const a = Math.hypot(e1.x - c.x, e1.y - c.y), u = { x: (e1.x - c.x) / a, y: (e1.y - c.y) / a }, v = { x: -u.y, y: u.x }; const b = Math.abs((q.x - c.x) * v.x + (q.y - c.y) * v.y); segPts = [];
       if (b < 1e-9) { msg('Ellipse: the minor point is on the major axis. Click off the axis.'); draw(); return; }
       const pts: P[] = []; for (let i = 0; i < 72; i++) { const t = (i / 72) * 2 * Math.PI; pts.push({ x: c.x + u.x * a * Math.cos(t) + v.x * b * Math.sin(t), y: c.y + u.y * a * Math.cos(t) + v.y * b * Math.sin(t) }); }
-      sketch.push({ t: 'poly', pts, ell: { c: { ...c }, a, b, rot: (Math.atan2(u.y, u.x) * 180) / Math.PI } }); props(); msg(`Ellipse added: semi-major ${a.toFixed(3)} mm, semi-minor ${b.toFixed(3)} mm. The sketch shows it as a 72-segment polygon; Extrude builds the exact ellipse in the solid kernel. Not parametric. Moving or editing it turns it into a plain polygon.`); }
+      sketch.push({ t: 'poly', pts, ell: { c: { ...c }, a, b, rot: (Math.atan2(u.y, u.x) * 180) / Math.PI } }); props(); msg(`Ellipse added: semi-major ${a.toFixed(3)} mm, semi-minor ${b.toFixed(3)} mm. The sketch shows it as a 72-segment polygon; Extrude builds the exact ellipse in the solid kernel. Not parametric (no ellipse dimensions or constraints). Move, Copy, Rotate, Mirror, Scale and Patterns keep it exact.`); }
     hover = p; draw(); return;
   }
   if (tool === 'slot') {
