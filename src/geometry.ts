@@ -38,6 +38,15 @@ export function incircleOfLines(l1: Ln, l2: Ln, l3: Ln): { c: P; r: number } | n
   const ar = Math.abs((v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y)) / 2; if (ar < 1e-9 || s < 1e-9) return null;
   return { c: { x: (a * v0.x + b * v1.x + c * v2.x) / s, y: (a * v0.y + b * v1.y + c * v2.y) / s }, r: (2 * ar) / s };
 }
+/** Arc that leaves point p in direction t (tangent there) and ends at q. null when q lies on the tangent line (no arc). The sweep runs from p to q in the turning direction that starts along t. */
+export function arcTangentFrom(p: P, t: P, q: P): { a: P; b: P; m: P; c: P; r: number } | null {
+  const tl = Math.hypot(t.x, t.y); if (tl < 1e-12) return null; const u = { x: t.x / tl, y: t.y / tl }, n = { x: -u.y, y: u.x };
+  const d = { x: q.x - p.x, y: q.y - p.y }, nd = n.x * d.x + n.y * d.y; if (Math.abs(nd) < 1e-9) return null;
+  const k = (d.x * d.x + d.y * d.y) / (2 * nd), c = { x: p.x + n.x * k, y: p.y + n.y * k }, r = Math.abs(k);
+  const a0 = Math.atan2(p.y - c.y, p.x - c.x), a1 = Math.atan2(q.y - c.y, q.x - c.x), s = k > 0 ? 1 : -1;
+  let sw = s * (a1 - a0); while (sw <= 1e-12) sw += 2 * Math.PI; while (sw > 2 * Math.PI) sw -= 2 * Math.PI;
+  const am = a0 + (s * sw) / 2; return { a: { ...p }, b: { ...q }, m: { x: c.x + r * Math.cos(am), y: c.y + r * Math.sin(am) }, c, r };
+}
 export function circle3(a: P, b: P, m: P): { c: P; r: number } | null {
   const d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y));
   if (Math.abs(d) < 1e-9) return null;
