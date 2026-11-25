@@ -12,6 +12,16 @@ export const mirrorTf = (p: P, q: P): Tf => { const dx = q.x - p.x, dy = q.y - p
 
 const aligned = (a: P, b: P) => Math.abs(a.x - b.x) < 1e-9 || Math.abs(a.y - b.y) < 1e-9;
 
+/** Exact ellipse under a similarity transform (move, rotate, mirror, uniform scale). Throws when the transform is not a similarity, so the ellipse is never silently changed. */
+type Ell = { c: P; a: number; b: number; rot: number };
+function ellTransform(q: Ell, f: Tf): Ell {
+  const r = (q.rot * Math.PI) / 180, u = { x: Math.cos(r), y: Math.sin(r) };
+  const C = f(q.c), A = f({ x: q.c.x + q.a * u.x, y: q.c.y + q.a * u.y }), B = f({ x: q.c.x - q.b * u.y, y: q.c.y + q.b * u.x });
+  const a2 = Math.hypot(A.x - C.x, A.y - C.y), b2 = Math.hypot(B.x - C.x, B.y - C.y), k = a2 / q.a, dot = (A.x - C.x) * (B.x - C.x) + (A.y - C.y) * (B.y - C.y);
+  if (Math.abs(b2 / q.b - k) > 1e-6 * k || Math.abs(dot) > 1e-6 * a2 * b2) throw new Error('This change would distort the ellipse. Only move, copy, rotate, mirror, scale and patterns keep an exact ellipse.');
+  return { c: C, a: a2, b: b2, rot: (Math.atan2(A.y - C.y, A.x - C.x) * 180) / Math.PI };
+}
+
 /** A transformed copy of one entity. A rectangle that stops being axis-aligned becomes a 4-point polygon. */
 export function transformEntity(e: Entity, f: Tf): Entity {
   if (isPt(e)) return { t: 'point', p: f((e as PointE).p) } as unknown as Entity;
@@ -19,7 +29,7 @@ export function transformEntity(e: Entity, f: Tf): Entity {
     case 'line': return { t: 'line', a: f(e.a), b: f(e.b) };
     case 'arc': return { t: 'arc', a: f(e.a), b: f(e.b), m: f(e.m) };
     case 'circle': return { t: 'circle', c: f(e.c), r: e.r };
-    case 'poly': return { t: 'poly', pts: e.pts.map(f), ...(e.segs ? { segs: e.segs.map((s) => ({ a: f(s.a), b: f(s.b), ...(s.m ? { m: f(s.m) } : {}) })) } : {}) };
+    case 'poly': return { t: 'poly', pts: e.pts.map(f), ...(e.ell ? { ell: ellTransform(e.ell, f) } : {}), ...(e.segs ? { segs: e.segs.map((s) => ({ a: f(s.a), b: f(s.b), ...(s.m ? { m: f(s.m) } : {}) })) } : {}) };
     case 'rect': {
       const c = [{ x: e.a.x, y: e.a.y }, { x: e.b.x, y: e.a.y }, { x: e.b.x, y: e.b.y }, { x: e.a.x, y: e.b.y }].map(f);
       if (c.every((p, i) => aligned(p, c[(i + 1) % 4]))) return { t: 'rect', a: c[0], b: c[2] };
@@ -52,7 +62,7 @@ export function stretchEntity(e: Entity, w: Win, dx: number, dy: number): Entity
   const f: Tf = (p) => (inWin(w, p) ? { x: p.x + dx, y: p.y + dy } : p);
   if (e.t === 'circle') return inWin(w, e.c) ? transformEntity(e, moveTf(dx, dy)) : e;
   if (e.t === 'arc') { const ia = inWin(w, e.a), ib = inWin(w, e.b); if (ia && ib) return transformEntity(e, moveTf(dx, dy)); return ia || ib ? null : e; }
-  if (e.t === 'poly' && e.segs && e.segs.some((s) => s.m)) { const ins = e.pts.filter((p) => inWin(w, p)).length; return ins === 0 ? e : ins === e.pts.length ? transformEntity(e, moveTf(dx, dy)) : null; }
+  if (e.t === 'poly' && (e.ell || (e.segs && e.segs.some((s) => s.m)))) { const ins = e.pts.filter((p) => inWin(w, p)).length; return ins === 0 ? e : ins === e.pts.length ? transformEntity(e, moveTf(dx, dy)) : null; }
   const pts = isPt(e) ? [(e as PointE).p] : e.t === 'line' ? [e.a, e.b] : e.t === 'rect' ? [e.a, e.b, { x: e.a.x, y: e.b.y }, { x: e.b.x, y: e.a.y }] : e.pts;
   return pts.some((p) => inWin(w, p)) ? transformEntity(e, f) : e;
 }
