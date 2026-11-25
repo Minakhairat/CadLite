@@ -16,4 +16,14 @@ const w = (await make_gcs_wrapper()) as any; const P = (x: number, y: number) =>
 { const arc: Arc3 = { a: P(0, 0), b: P(10, 0), m: P(5, 5) }, l: L = { a: P(0, 0), b: P(10, 0) }; let t = false; try { solveArcs(w, [l], [arc], [{ k: 'tanla', arc, l }]); } catch { t = true; } log.push(`${t ? 'PASS' : 'FAIL'} chord line: refused`); if (!t) fails++; near(arc.m.y, 5, 0, 'chord line: arc unchanged'); }
 // 5) impossible: line far from the arc on the chord side gives no tangent circle? line y=-100 and arc ends (0,0),(10,0): a circle through both and tangent to y=-100 exists (large), so it must be accepted and tangent
 { const arc: Arc3 = { a: P(0, 0), b: P(10, 0), m: P(5, -5) }, l: L = { a: P(-50, -6), b: P(50, -6) }; solveArcs(w, [l], [arc], [{ k: 'tanla', arc, l }]); near(arc.m.y, -6, 1e-6, 'bulge down tangent to y=-6: middle y'); }
+{ const { arcOwnDof } = await import('./arc-solver-core'); const A = {}, B = {}, l1 = {}, l2 = {};
+  const eq = (g: number | undefined, want: number, m: string) => { const ok = g === want; log.push(`${ok ? 'PASS' : 'FAIL'} ${m} got=${g} want=${want}`); if (!ok) fails++; };
+  eq(arcOwnDof([A], []).get(A), 5, 'free arc: 5');
+  eq(arcOwnDof([A], [{ k: 'tanla', arc: A, other: l1 }]).get(A), 4, 'one tangent: 4');
+  eq(arcOwnDof([A], [{ k: 'tanla', arc: A, other: l1 }, { k: 'tanla', arc: A, other: l2 }]).get(A), 3, 'two different tangent lines: 3');
+  eq(arcOwnDof([A], [{ k: 'tanla', arc: A, other: l1 }, { k: 'tanla', arc: A, other: l1 }]).get(A), 4, 'same tangent twice counts once: 4');
+  eq(arcOwnDof([A, B], [{ k: 'aconc', arc: A, other: B }, { k: 'aeqr', arc: A, other: B }]).get(A), 2, 'concentric (2) + equal radius (1): 2');
+  eq(arcOwnDof([A, B], [{ k: 'aconc', arc: A, other: B }]).get(B), 5, 'the reference arc is not reduced: 5');
+  eq(arcOwnDof([A], [{ k: 'tanla', arc: A, other: l1 }, { k: 'tanla', arc: A, other: l2 }, { k: 'aconc', arc: A, other: B }, { k: 'aeqr', arc: A, other: B }]).get(A), 0, 'floor at 0');
+}
 writeFileSync('/tmp/arc-solver-result.txt', log.join('\n') + '\n'); console.log(log.join('\n')); process.exit(fails ? 1 : 0);
