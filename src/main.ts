@@ -1,5 +1,5 @@
 import { Param, evalExpr, resolveParams, validName } from './expr';
-import { extrudeEdges, projectEdges, FeatLike } from './project';
+import { extrudeEdges, projectEdges, projectionStatus, FeatLike } from './project';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
@@ -732,10 +732,11 @@ function numField(label: string, v: number, on: (n: number) => void) {
   l.append(i); return l;
 }
 function props() {
+  const prjStat = mode === 'sketch' ? projectionStatus(sketch, features as unknown as FeatLike[], editing !== null ? editing : features.length, curPlane, curOrient) : new Map<number, { state: string }>();
   refreshDof(); const p = $('props'); p.innerHTML = ''; p.classList.toggle('show', mode === 'sketch' && sketch.length > 0);
   sketch.forEach((e, i) => {
     const r = document.createElement('div'); r.className = 'row'; const g = document.createElement('div'); g.className = 'g';
-    const title = (t: string) => { const b = document.createElement('b'); b.textContent = t + (e.prj ? ` [projected from Feature ${e.prj}: static copy, construction, not linked]` : ''); r.append(b); };
+    const title = (t: string) => { const b = document.createElement('b'); const st = e.prj ? prjStat.get(e.prj) : undefined; b.textContent = t + (e.prj ? (st?.state === 'stale' ? ` [projected from Feature ${e.prj}: STALE, the source changed or this copy was edited. Press Project Geometry to refresh. Not linked]` : st?.state === 'source-missing' ? ` [projected from Feature ${e.prj}: the source feature is gone or not an Extrude. Copy only]` : ` [projected from Feature ${e.prj}: matches the source now. Static copy, NOT linked: it will not follow changes]`) : ''); r.append(b); };
     if (e.t === 'rect') {
       const x = Math.min(e.a.x, e.b.x), y = Math.min(e.a.y, e.b.y), w = Math.abs(e.b.x - e.a.x), h = Math.abs(e.b.y - e.a.y);
       const set = (nx: number, ny: number, nw: number, nh: number) => { e.a = { x: nx, y: ny }; e.b = { x: nx + nw, y: ny + nh }; };
@@ -1157,6 +1158,12 @@ document.getElementById('prjbtn')?.addEventListener('click', () => {
   const upto = editing !== null ? editing : features.length; const okF = (i: number) => features[i].kind === 'extrude' && features[i].op !== 'cut' && features[i].op !== 'intersect';
   const idx = sel !== null && sel < upto && okF(sel) ? [sel] : features.map((_, i) => i).filter((i) => i < upto && okF(i));
   if (!idx.length) { msg('Project Geometry: no earlier extrude feature to project (Cut and Intersect profiles are not projected; only Extrude, Join and New).'); return; }
+  let refreshed = 0;
+  { const st = projectionStatus(sketch, features as unknown as FeatLike[], upto, curPlane, curOrient); const stale = idx.filter((i) => st.get(i + 1)?.state === 'stale');
+    if (stale.length) {
+      const old = sketch.filter((e) => e.prj !== undefined && stale.includes(e.prj - 1));
+      if (old.some((e) => usedByCon(e))) { msg('Project Geometry: a stale projected line or circle has constraints or dimensions, so it cannot be replaced. Nothing changed. Delete those constraints first.'); return; }
+      refreshed = old.length; sketch = sketch.filter((e) => !old.includes(e)); } }
   const have = new Set(sketch.filter((e) => e.prj).map((e) => JSON.stringify([e.prj, e.t, e.t === 'line' ? [e.a, e.b] : e.t === 'circle' ? [e.c, e.r] : 0])));
   const nk = (e: Entity, n: number) => JSON.stringify([n, e.t, e.t === 'line' ? [e.a, e.b] : e.t === 'circle' ? [e.c, e.r] : 0]); const rd = (v: number) => Math.round(v * 1e6) / 1e6;
   let lines = 0, circles = 0, skipped = 0;
@@ -1165,6 +1172,6 @@ document.getElementById('prjbtn')?.addEventListener('click', () => {
     for (const e of projectEdges(ed, curPlane, curOrient)) { const c = clone(e); if (c.t === 'line') { c.a = { x: rd(c.a.x), y: rd(c.a.y) }; c.b = { x: rd(c.b.x), y: rd(c.b.y) }; } else if (c.t === 'circle') { c.c = { x: rd(c.c.x), y: rd(c.c.y) }; c.r = rd(c.r); } c.prj = i + 1; if (have.has(nk(c, i + 1))) continue; sketch.push(c); if (c.t === 'line') lines++; else circles++; }
   }
   ck(); props(); draw();
-  msg(lines + circles ? `Project Geometry: ${lines} line(s), ${circles} circle(s) from Feature ${idx.map((i) => i + 1).join(', ')}. STATIC COPY: does NOT update if the feature changes.${skipped ? ' ' + skipped + ' arc/ellipse/spline skipped.' : ''}` : 'Project Geometry: nothing new to add (already projected, or the profile lies edge-on to this plane).');
+  msg(lines + circles ? `Project Geometry: ${lines} line(s), ${circles} circle(s) from Feature ${idx.map((i) => i + 1).join(', ')}${refreshed ? ` (replaced ${refreshed} stale projected shape(s))` : ''}. STATIC COPY: does NOT update if the feature changes; it is flagged STALE in Properties when it differs.${skipped ? ' ' + skipped + ' arc/ellipse/spline skipped.' : ''}` : 'Project Geometry: nothing new to add (already projected, or the profile lies edge-on to this plane).');
 });
 document.getElementById('prmbtn')?.addEventListener('click', () => { if (mode !== 'sketch') { msg('Parameters: start or edit a sketch first.'); return; } prmBox.style.display = prmBox.style.display === 'none' ? 'block' : 'none'; if (prmBox.style.display !== 'none') refreshPrm(); });
