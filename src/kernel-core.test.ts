@@ -84,3 +84,7 @@ near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y:
   chk('XZ r=1', bb('XZ', { r: 1 }).bb, [[-20, -5, 0], [0, 0, 10]]);
   chk('YZ r=1', bb('YZ', { r: 1 }).bb, [[0, -20, 0], [5, 0, 10]]);
   near(bb('XY', { r: 1, f: true }).v, 1000, 1e-6, 'orientation keeps the volume'); }
+// Exact ellipse (optional ell on a poly), rotated 30 degrees and cut from a plate
+const ellE = (cx: number, cy: number, a: number, b: number, rot: number): Entity => ({ t: 'poly', pts: [{ x: cx + a, y: cy }, { x: cx, y: cy + b }, { x: cx - a, y: cy }, { x: cx, y: cy - b }], ell: { c: { x: cx, y: cy }, a, b, rot } });
+near(V(buildBodies(R, [{ kind: 'extrude', sketch: [ellE(20, 15, 15, 5, 30)], depth: 4 }])), Math.PI * 15 * 5 * 4, 0.01, 'exact ellipse extrude volume (rotated 30 deg)');
+near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [ellE(20, 15, 15, 5, 0)], depth: 10, op: 'cut' }])), 12000 - Math.PI * 15 * 5 * 10, 0.01, 'exact ellipse cut from a plate');
