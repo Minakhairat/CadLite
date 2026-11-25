@@ -7,7 +7,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
-import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, splineSample } from './geometry';
+import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -341,6 +341,17 @@ sk.addEventListener('pointerdown', (e) => {
     const cc = incircleOfLines(l1, l2, l3); if (!cc) { msg('Circle tangent: two of the lines are parallel or the three meet at one point. Pick three lines that make a triangle.'); draw(); return; }
     sketch.push({ t: 'circle', c: cc.c, r: cc.r }); props(); draw(); msg(`Circle added: tangent to the three lines, centre (${+cc.c.x.toFixed(3)}, ${+cc.c.y.toFixed(3)}), radius ${+cc.r.toFixed(3)} mm. Not linked to the lines: it does not follow if they move.`); return;
   }
+  if (tool === 'arct') {
+    if (!arctStart) {
+      let best: { p: P; t: P } | null = null, bd = (14 * devicePixelRatio) / cam.s;
+      for (const en of sketch) if (en.t === 'line') for (const e2 of [0, 1]) { const q = e2 ? en.b : en.a, o = e2 ? en.a : en.b; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd) { bd = d; best = { p: { ...q }, t: { x: q.x - o.x, y: q.y - o.y } }; } }
+      if (!best) { msg('Arc tangent: click an end point of a line first.'); return; }
+      arctStart = best; msg('Now click the end point of the arc. It leaves the line end tangent to the line.'); hover = pr; draw(); return;
+    }
+    const st = arctStart; arctStart = null; const ar = arcTangentFrom(st.p, st.t, p);
+    if (!ar) { msg('Arc tangent: the end point is on the line direction. Click off the line.'); draw(); return; }
+    sketch.push({ t: 'arc', a: ar.a, b: ar.b, m: ar.m }); props(); draw(); msg(`Arc added: tangent to the line at its end point, radius ${+ar.r.toFixed(3)} mm. Not linked to the line: no tangent constraint.`); return;
+  }
   if (tool === 'circ3') {
     segPts.push(p);
     if (segPts.length === 3) { const [a, b, c3] = segPts; segPts = []; const cc = circle3(a, b, c3); if (cc) { sketch.push({ t: 'circle', c: cc.c, r: cc.r }); props(); msg(`Circle added: centre (${+cc.c.x.toFixed(3)}, ${+cc.c.y.toFixed(3)}), radius ${+cc.r.toFixed(3)} mm.`); } else msg('Circle: the three points are on one line. Pick points off the line.'); }
@@ -423,6 +434,7 @@ const commitFillet = () => {
 };
 type Extrude_L = Extract<Entity, { t: 'line' }>;
 let ctan3Pick: number[] = [];
+let arctStart: { p: P; t: P } | null = null;
 let regPts: { c: P; v: P; circ?: boolean } | null = null; let regN = 6;
 const commitRegular = () => {
   const q = regPts!; const n = Math.round(parseFloat($<HTMLInputElement>('dimin').value));
@@ -803,7 +815,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; ctan3Pick = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; ctan3Pick = []; arctStart = null; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
