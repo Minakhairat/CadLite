@@ -8,7 +8,7 @@ Run against a local dev server or the live site:
 
     npm run dev -- --port 4180
     node browser-tests/dim-guard-live.mjs http://localhost:4180/
-    node browser-tests/dim-guard-live.mjs https://minakhairat.github.io/CadLite/
+    node browser-tests/dim-guard-live.mjs https://minakhairat.github.io/MK-CAD/
 
 `dim-guard-live.mjs` checks the shared-corner dimension guard on the solver path: a plain dimension, a Vertical constraint, then a conflicting dimension (plain and expression). It expects refusal, unchanged geometry, no Redo entry, accepted non-conflicting expression, extrude volume 16000 and a clean save and reopen.
 
