@@ -1,7 +1,7 @@
 import puppeteer from 'puppeteer-core'; import fs from 'node:fs';
 const out=[];const log=(...a)=>{const t=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ');out.push(t);console.log(t)};
 const b=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
-const url=process.argv[2];
+const url=process.argv[2];let fails=0;const ok=(name,c)=>{if(!c){fails++;log('ASSERT FAIL',name)}else log('ASSERT OK',name)};
 const w=(t=300)=>new Promise(r=>setTimeout(r,t));
 const mk=async()=>{const p=await b.newPage();await p.setViewport({width:1280,height:800});p.on('pageerror',e=>log('PAGEERR',e.message.slice(0,200)));await p.goto(url,{waitUntil:'networkidle0'});await p.evaluate(()=>localStorage.clear());await p.goto(url,{waitUntil:'networkidle0'});await w(1000);return p};
 const api=(p)=>{const o={};o.box=async()=>p.$eval('#sk',e=>{const q=e.getBoundingClientRect();return {x:q.x,y:q.y,w:q.width,h:q.height}});
@@ -49,8 +49,8 @@ await square();
 await dimLine(20,0,'40');log('plain bottom=40',await a.msg(),await lens());
 await a.tool('cver');await a.click(0,20);await w(400);log('vertical on left',await a.msg(),await S2(),await a.C());
 const g0=await S2();
-await dimLine(0,20,'30');log('left=30 on constrained line',await a.msg(),await lens(),'geometry',await S2(),'unchanged',(await S2())===g0);
-await p.screenshot({path:'/tmp/dimguard-mixed.png'});
+await dimLine(0,20,'30');ok('left=30 refused, geometry unchanged',/Dimension refused/.test(await a.msg())&&(await S2())===g0);
 await w(800);log('after settle',await a.msg(),await lens(),await S2());
-await p.keyboard.down('Control');await p.keyboard.press('z');await w(400);await p.keyboard.up('Control');log('undo',await S2());
+await p.keyboard.down('Control');await p.keyboard.press('z');await w(400);await p.keyboard.up('Control');{const u=await S2();ok('undo after refusal returns the clean square, not the transient broken state',u===JSON.stringify([[0,0,40,0],[40,0,40,40],[40,40,0,40],[0,40,0,0]]));}
+await b.close();process.exit(fails?1:0);
 const f=await save(p,'mix');const j=JSON.parse(fs.readFileSync(f,'utf8'));log('saved',JSON.stringify(j).slice(0,1500));
