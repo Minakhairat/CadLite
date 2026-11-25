@@ -66,3 +66,31 @@ export function projectEdges(ed: Edges3, plane: Plane | undefined, o: Orient | u
   }
   return out;
 }
+
+const rd6 = (v: number) => Math.round(v * 1e6) / 1e6;
+/** The projection of one earlier feature onto a sketch plane, rounded the way stored copies are. Lines and circles only; `skipped` counts what is not projected. */
+export function projectFeature(f: FeatLike, plane: Plane | undefined, o: Orient | undefined): { ents: Entity[]; skipped: number } {
+  const ed = extrudeEdges(f); const ents: Entity[] = [];
+  for (const e of projectEdges(ed, plane, o)) {
+    if (e.t === 'line') ents.push({ ...e, a: { x: rd6(e.a.x), y: rd6(e.a.y) }, b: { x: rd6(e.b.x), y: rd6(e.b.y) } });
+    else if (e.t === 'circle') ents.push({ ...e, c: { x: rd6(e.c.x), y: rd6(e.c.y) }, r: rd6(e.r) });
+  }
+  return { ents, skipped: ed.skipped };
+}
+const ekey = (e: Entity) => e.t === 'line' ? 'l:' + [`${rd6(e.a.x)},${rd6(e.a.y)}`, `${rd6(e.b.x)},${rd6(e.b.y)}`].sort().join('|') : e.t === 'circle' ? `c:${rd6(e.c.x)},${rd6(e.c.y)},${rd6(e.r)}` : `${e.t}`;
+export type ProjState = { state: 'current' | 'stale' | 'source-missing'; missing: number; extra: number };
+/** For every projected-copy tag (prj) in a sketch: is the stored copy still what the source feature projects to now? Stale = lines or circles were added, removed or changed on either side. Source features are those before `upto`; a tag that points at a missing or non-extrude feature is 'source-missing'. */
+export function projectionStatus(ents: Entity[], features: FeatLike[], upto: number, plane: Plane | undefined, o: Orient | undefined): Map<number, ProjState> {
+  const out = new Map<number, ProjState>(); const tags = new Set(ents.filter((e) => e.prj).map((e) => e.prj as number));
+  for (const tag of tags) {
+    const f = features[tag - 1];
+    if (!f || tag - 1 >= upto || f.kind !== 'extrude' || f.op === 'cut' || f.op === 'intersect') { out.set(tag, { state: 'source-missing', missing: 0, extra: 0 }); continue; }
+    const want = new Map<string, number>(); for (const e of projectFeature(f, plane, o).ents) want.set(ekey(e), (want.get(ekey(e)) ?? 0) + 1);
+    const have = new Map<string, number>(); for (const e of ents) if (e.prj === tag) have.set(ekey(e), (have.get(ekey(e)) ?? 0) + 1);
+    let missing = 0, extra = 0;
+    for (const [k, n] of want) missing += Math.max(0, n - (have.get(k) ?? 0));
+    for (const [k, n] of have) extra += Math.max(0, n - (want.get(k) ?? 0));
+    out.set(tag, { state: missing || extra ? 'stale' : 'current', missing, extra });
+  }
+  return out;
+}
