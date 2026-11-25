@@ -1,4 +1,5 @@
 import { Param, evalExpr, resolveParams, validName } from './expr';
+import { extrudeEdges, projectEdges, FeatLike } from './project';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
@@ -1110,4 +1111,19 @@ $('physbtn').onclick = physCard;
   rb.addEventListener('scroll', upd); addEventListener('resize', upd); document.addEventListener('click', () => setTimeout(upd, 80)); setTimeout(upd, 300); setTimeout(upd, 1500);
 })();
 
+document.getElementById('prjbtn')?.addEventListener('click', () => {
+  if (mode !== 'sketch') { msg('Project Geometry: start or edit a sketch first.'); return; }
+  const upto = editing !== null ? editing : features.length; const okF = (i: number) => features[i].kind === 'extrude' && features[i].op !== 'cut' && features[i].op !== 'intersect';
+  const idx = sel !== null && sel < upto && okF(sel) ? [sel] : features.map((_, i) => i).filter((i) => i < upto && okF(i));
+  if (!idx.length) { msg('Project Geometry: no earlier extrude feature to project (Cut and Intersect profiles are not projected; only Extrude, Join and New).'); return; }
+  const have = new Set(sketch.filter((e) => e.prj).map((e) => JSON.stringify([e.prj, e.t, e.t === 'line' ? [e.a, e.b] : e.t === 'circle' ? [e.c, e.r] : 0])));
+  const nk = (e: Entity, n: number) => JSON.stringify([n, e.t, e.t === 'line' ? [e.a, e.b] : e.t === 'circle' ? [e.c, e.r] : 0]); const rd = (v: number) => Math.round(v * 1e6) / 1e6;
+  let lines = 0, circles = 0, skipped = 0;
+  for (const i of idx) {
+    const ed = extrudeEdges(features[i] as unknown as FeatLike); skipped += ed.skipped;
+    for (const e of projectEdges(ed, curPlane, curOrient)) { const c = clone(e); if (c.t === 'line') { c.a = { x: rd(c.a.x), y: rd(c.a.y) }; c.b = { x: rd(c.b.x), y: rd(c.b.y) }; } else if (c.t === 'circle') { c.c = { x: rd(c.c.x), y: rd(c.c.y) }; c.r = rd(c.r); } c.prj = i + 1; if (have.has(nk(c, i + 1))) continue; sketch.push(c); if (c.t === 'line') lines++; else circles++; }
+  }
+  ck(); props(); draw();
+  msg(lines + circles ? `Project Geometry: ${lines} line(s) and ${circles} circle(s) added as construction geometry from Feature ${idx.map((i) => i + 1).join(', ')}. STATIC COPY: not linked, so editing that feature later does NOT update them. ${skipped ? skipped + ' arc/ellipse/spline edge(s) were not projected. ' : ''}Edges of the profile only, not of the final body.` : 'Project Geometry: nothing new to add (already projected, or the profile lies edge-on to this plane).');
+});
 document.getElementById('prmbtn')?.addEventListener('click', () => { if (mode !== 'sketch') { msg('Parameters: start or edit a sketch first.'); return; } prmBox.style.display = prmBox.style.display === 'none' ? 'block' : 'none'; if (prmBox.style.display !== 'none') refreshPrm(); });
