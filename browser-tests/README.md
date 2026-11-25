@@ -14,4 +14,4 @@ Run against a local dev server or the live site:
 
 `dim-guard-baseline.mjs` runs the same setup and then calls Undo after the refusal. Expected: Undo returns the clean square. Before the history fix, Undo restored the broken geometry (bottom edge length 41.2311).
 
-Known limit: these scripts print results; they do not assert and exit non-zero. Read the log lines against the expectations above.
+Both scripts print `ASSERT OK` or `ASSERT FAIL` lines and exit non-zero on any failure. They are run by hand and are NOT wired into build CI, so a green CI run says nothing about them.
