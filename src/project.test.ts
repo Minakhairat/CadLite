@@ -1,4 +1,4 @@
-import { toWorld, fromWorld, extrudeEdges, projectEdges } from './project';
+import { toWorld, fromWorld, extrudeEdges, projectEdges, projectFeature, projectionStatus } from './project';
 import type { Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (!(Math.abs(a - b) <= tol)) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, +a.toFixed(4)); };
 // mapping round trip for every plane and orientation
@@ -33,3 +33,20 @@ const ar: Entity = { t: 'poly', pts: [], segs: [{ a: { x: 0, y: 0 }, b: { x: 10,
 near(extrudeEdges({ kind: 'extrude', sketch: [ar], depth: 4, plane: 'XY' }).skipped, 1, 0, 'arc span counted as skipped');
 near(extrudeEdges({ kind: 'revolve', sketch: [sq], depth: 4 }).segs.length, 0, 0, 'revolve gives no edges');
 console.log('project tests passed');
+{
+  const ck = (c: boolean, m: string) => { if (!c) { console.error('FAIL', m); process.exit(1); } console.log('ok', m); };
+  const feat = (w: number, h: number) => ({ kind: 'extrude', depth: 10, sketch: [{ t: 'rect', a: { x: 0, y: 0 }, b: { x: w, y: h } }] }) as import('./project').FeatLike;
+  const copy = projectFeature(feat(40, 10), 'XZ', undefined).ents.map((e) => ({ ...e, prj: 1 }));
+  ck(copy.length === 4, 'XZ projection of a 40x10 profile is 4 lines');
+  ck(projectionStatus(copy as never, [feat(40, 10)], 1, 'XZ', undefined).get(1)?.state === 'current', 'fresh copy is current');
+  const s2 = projectionStatus(copy as never, [feat(50, 10)], 1, 'XZ', undefined).get(1)!;
+  ck(s2.state === 'stale' && s2.missing > 0 && s2.extra > 0, 'source profile changed to 50 wide: stale (missing ' + s2.missing + ', extra ' + s2.extra + ')');
+  const moved = copy.map((e, i) => (i === 0 && e.t === 'line' ? { ...e, a: { x: e.a.x + 1, y: e.a.y } } : e));
+  ck(projectionStatus(moved as never, [feat(40, 10)], 1, 'XZ', undefined).get(1)?.state === 'stale', 'a projected line moved by hand: stale');
+  ck(projectionStatus(copy.slice(1) as never, [feat(40, 10)], 1, 'XZ', undefined).get(1)?.missing === 1, 'one projected line deleted: 1 missing');
+  ck(projectionStatus(copy as never, [], 1, 'XZ', undefined).get(1)?.state === 'source-missing', 'source feature gone: source-missing');
+  ck(projectionStatus(copy as never, [feat(40, 10)], 0, 'XZ', undefined).get(1)?.state === 'source-missing', 'source not before the sketch: source-missing');
+  ck(projectionStatus(copy as never, [{ ...feat(40, 10), op: 'cut' }], 1, 'XZ', undefined).get(1)?.state === 'source-missing', 'source became a Cut: source-missing');
+  const rev = copy.map((e) => (e.t === 'line' ? { ...e, a: e.b, b: e.a } : e));
+  ck(projectionStatus(rev as never, [feat(40, 10)], 1, 'XZ', undefined).get(1)?.state === 'current', 'line direction reversed is still current');
+}
