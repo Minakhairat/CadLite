@@ -82,3 +82,28 @@ import { chamferCorner, chamferDistAngle } from './geometry';
   bad(() => chamferDistAngle(O, A, B, 2, 90), 'chamfer angle too large');
   bad(() => chamferDistAngle(O, A, B, 2, 0), 'chamfer angle zero');
 }
+
+import { evalExpr, resolveParams } from './expr';
+{
+  const ok = (m: string, got: number, want: number) => near(got, want, 1e-9, m);
+  const bad = (f: () => unknown, m: string) => { let t = false; try { f(); } catch { t = true; } if (!t) { console.error('FAIL', m); process.exit(1); } console.log('ok', m); };
+  ok('expr precedence 2+3*4', evalExpr('2+3*4', {}), 14);
+  ok('expr parentheses and unary minus', evalExpr('-(2+3)*4', {}), -20);
+  ok('expr power right-assoc 2^3^2', evalExpr('2^3^2', {}), 512);
+  ok('expr names', evalExpr('w*2 + h/4', { w: 10, h: 8 }), 22);
+  ok('expr decimals and exponent', evalExpr('.5 + 1e1', {}), 10.5);
+  bad(() => evalExpr('w+1', {}), 'expr unknown name');
+  bad(() => evalExpr('4/(2-2)', {}), 'expr divide by zero');
+  bad(() => evalExpr('(1+2', {}), 'expr missing parenthesis');
+  bad(() => evalExpr('1+', {}), 'expr ends early');
+  bad(() => evalExpr('2 3', {}), 'expr trailing token');
+  bad(() => evalExpr('', {}), 'expr empty');
+  const r = resolveParams([{ name: 'h', expr: 'w/2' }, { name: 'w', expr: '40' }, { name: 'a', expr: 'h*w' }]);
+  ok('params any order: h', r.h, 20); ok('params a=h*w', r.a, 800);
+  bad(() => resolveParams([{ name: 'a', expr: 'b+1' }, { name: 'b', expr: 'a+1' }]), 'params circular');
+  bad(() => resolveParams([{ name: 'a', expr: 'a' }]), 'params self reference');
+  bad(() => resolveParams([{ name: '1x', expr: '1' }]), 'params bad name');
+  bad(() => resolveParams([{ name: 'a', expr: '1' }, { name: 'a', expr: '2' }]), 'params duplicate');
+  bad(() => resolveParams([{ name: 'a', expr: 'zz' }]), 'params unknown reference');
+}
+{ const r = resolveParams([{ name: 'e3', expr: '2' }, { name: 'k', expr: '1e3 + e3' }]); near(r.k, 1002, 1e-9, 'params: 1e3 literal is not the name e3'); }
