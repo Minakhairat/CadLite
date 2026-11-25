@@ -88,8 +88,11 @@ near(V(buildBodies(R, [{ kind: 'revolve', sketch: [{ t: 'circle', c: { x: 10, y:
 const ellE = (cx: number, cy: number, a: number, b: number, rot: number): Entity => ({ t: 'poly', pts: [{ x: cx + a, y: cy }, { x: cx, y: cy + b }, { x: cx - a, y: cy }, { x: cx, y: cy - b }], ell: { c: { x: cx, y: cy }, a, b, rot } });
 near(V(buildBodies(R, [{ kind: 'extrude', sketch: [ellE(20, 15, 15, 5, 30)], depth: 4 }])), Math.PI * 15 * 5 * 4, 0.01, 'exact ellipse extrude volume (rotated 30 deg)');
 near(V(buildBodies(R, [plate, { kind: 'extrude', sketch: [ellE(20, 15, 15, 5, 0)], depth: 10, op: 'cut' }])), 12000 - Math.PI * 15 * 5 * 10, 0.01, 'exact ellipse cut from a plate');
-// Closed fit-point spline (optional spl on a poly): kernel builds a smooth curve through the points
-const circPts = Array.from({ length: 8 }, (_, i) => ({ x: 10 * Math.cos((i * Math.PI) / 4), y: 10 * Math.sin((i * Math.PI) / 4) }));
-near(V(buildBodies(R, [{ kind: 'extrude', sketch: [{ t: 'poly', pts: circPts, spl: circPts }], depth: 2 }])), Math.PI * 100 * 2, 0.2, 'spline through 8 points on a circle r10: volume close to the circle (within 0.2 mm3)');
+// Closed fit-point spline (optional spl on a poly): the sketch curve (splineSample) and the kernel solid use the same cubic spans
+import { splineSample, area } from './geometry';
 const irr = [[35, 15], [30, 25], [20, 30], [10, 25], [5, 15], [10, 5], [20, 0], [30, 5]].map(([x, y]) => ({ x, y }));
-const vi = V(buildBodies(R, [{ kind: 'extrude', sketch: [{ t: 'poly', pts: irr, spl: irr }], depth: 4 }])); console.log('spline fit 8 irregular points, kernel exact volume x4mm =', vi.toFixed(3));
+const dense = splineSample(irr, 400);
+const vi = V(buildBodies(R, [{ kind: 'extrude', sketch: [{ t: 'poly', pts: splineSample(irr), spl: irr }], depth: 4 }]));
+near(vi, Math.abs(area(dense)) * 4, 2653 * 0.0002, 'irregular spline: solid volume equals the drawn curve area x depth (regression for the 0.55 percent display/solid mismatch)');
+const circPts = Array.from({ length: 8 }, (_, i) => ({ x: 10 * Math.cos((i * Math.PI) / 4), y: 10 * Math.sin((i * Math.PI) / 4) }));
+near(V(buildBodies(R, [{ kind: 'extrude', sketch: [{ t: 'poly', pts: splineSample(circPts), spl: circPts }], depth: 2 }])), Math.PI * 100 * 2, 628.3 * 0.012, 'spline through 8 points on a circle r10 stays within 1.2 percent of the circle (Catmull-Rom is slightly inside)');
