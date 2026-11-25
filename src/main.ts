@@ -173,7 +173,10 @@ function ptRaw(e: PointerEvent): P { const r = sk.getBoundingClientRect(); retur
 function pt(e: PointerEvent): P { const r = sk.getBoundingClientRect(); const w = toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); const g = grid(); const tg = snapTarget(w); if (tg) return tg; return { x: snap(w.x, g), y: snap(w.y, g) }; }
 /** Snap to a Point marker, a line end point or a circle centre when the pointer is within 10 px of one. Points win over the others. */
 function snapTarget(w: P): P | null { const lim = (10 * devicePixelRatio) / cam.s; let best: P | null = null, bd = lim; const tryP = (q: P, bonus = 0) => { const d = Math.hypot(q.x - w.x, q.y - w.y) - bonus; if (d < bd) { bd = d; best = { x: q.x, y: q.y }; } };
-  for (const e of sketch) { if (isPt(e)) tryP((e as PointE).p, lim * 0.5); else if (e.t === 'line') { tryP(e.a); tryP(e.b); } else if (e.t === 'circle') tryP(e.c); } return best; }
+  for (const e of sketch) { if (isPt(e)) tryP((e as PointE).p, lim * 0.5); else if (e.t === 'line') { tryP(e.a); tryP(e.b); tryP({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }); } else if (e.t === 'circle') tryP(e.c); else if (e.t === 'arc') { tryP(e.a); tryP(e.b); } }
+  const ls = sketch.filter((e) => e.t === 'line') as Extract<Entity, { t: 'line' }>[];
+  for (let i = 0; i < ls.length; i++) for (let j = i + 1; j < ls.length; j++) { const p = ls[i], q = ls[j]; const r = { x: p.b.x - p.a.x, y: p.b.y - p.a.y }, s2 = { x: q.b.x - q.a.x, y: q.b.y - q.a.y }; const den = r.x * s2.y - r.y * s2.x; if (Math.abs(den) < 1e-12) continue; const tt = ((q.a.x - p.a.x) * s2.y - (q.a.y - p.a.y) * s2.x) / den, uu = ((q.a.x - p.a.x) * r.y - (q.a.y - p.a.y) * r.x) / den; if (tt > 1e-9 && tt < 1 - 1e-9 && uu > 1e-9 && uu < 1 - 1e-9) tryP({ x: p.a.x + tt * r.x, y: p.a.y + tt * r.y }); }
+  return best; }
 let pan: { x: number; y: number } | null = null;
 sk.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return; // right click opens the Inventor-style OK / Cancel menu
