@@ -9,6 +9,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
+import { filletLineArc } from './fillet-arc';
 import { nearestOnArc, SketchPat, SketchSrc, Entity, Feature, P, filletCorner, chamferCorner, chamferDistAngle, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -324,8 +325,16 @@ sk.addEventListener('pointerdown', (e) => {
   if (tool === 'sfil' || tool === 'sch1' || tool === 'sch2' || tool === 'sch3') {
     const isCh = tool !== 'sfil'; const nm = isCh ? 'Chamfer' : 'Fillet';
     const tol = (14 * devicePixelRatio) / cam.s; let best: P | null = null; let bd = tol;
-    for (const e of sketch) if (e.t === 'line') for (const q of [e.a, e.b]) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = { ...q }; } }
-    if (!best) { msg(nm + ': click a corner where two lines meet.'); return; }
+    for (const e of sketch) if (e.t === 'line' || (!isCh && e.t === 'arc')) for (const q of [e.a, e.b]) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = { ...q }; } }
+    if (!best) { msg(nm + ': click a corner where two lines meet' + (isCh ? '.' : ' (or a line meets an arc).')); return; }
+    const at = (q: P) => Math.hypot(q.x - best!.x, q.y - best!.y) < 1e-6;
+    const arcsHere = sketch.filter((e) => e.t === 'arc' && (at(e.a) || at(e.b)));
+    if (!isCh && arcsHere.length) {
+      const lns = sketch.filter((e) => e.t === 'line' && (at(e.a) || at(e.b)));
+      if (arcsHere.length !== 1 || lns.length !== 1) { msg('Fillet: a line-arc corner needs exactly one line and one arc meeting there (arc-arc is not built).'); return; }
+      if (usedByCon(lns[0]) || usedByCon(arcsHere[0])) { msg('Fillet: a line or arc with constraints or dimensions is refused (it would break them).'); return; }
+      filPt = best; chmPt = null; dimTarget = null; const box = $('dimbox'); const gr = $('gfx').getBoundingClientRect(); box.style.display = 'flex'; box.style.left = Math.min(e.clientX - gr.left + 10, gr.width - 170) + 'px'; box.style.top = e.clientY - gr.top + 10 + 'px'; return;
+    }
     const n = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - best!.x, q.y - best!.y) < 1e-6)).length;
     if (n !== 2) { msg(n < 2 ? nm + ': that point is not a corner of two lines.' : nm + ': more than two lines meet there.'); return; }
     if (isCh) { const cl = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - best!.x, q.y - best!.y) < 1e-6)); if (cl.some((l) => usedByCon(l))) { msg('Chamfer: lines with constraints or dimensions are refused (it would break them).'); return; } }
@@ -498,6 +507,16 @@ const commitFillet = () => {
   const P0 = filPt!; const r = parseFloat($<HTMLInputElement>('dimin').value);
   try {
     const ls = sketch.filter((e) => e.t === 'line' && [e.a, e.b].some((q) => Math.hypot(q.x - P0.x, q.y - P0.y) < 1e-6)) as Extract<Entity, { t: 'line' }>[];
+    const arcE = sketch.find((e) => e.t === 'arc' && (Math.hypot(e.a.x - P0.x, e.a.y - P0.y) < 1e-6 || Math.hypot(e.b.x - P0.x, e.b.y - P0.y) < 1e-6)) as Extract<Entity, { t: 'arc' }> | undefined;
+    if (arcE) {
+      if (ls.length !== 1) throw new Error('Fillet: a line-arc corner needs exactly one line and one arc.');
+      const l = ls[0]; const lf = Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6 ? l.b : l.a;
+      const g = filletLineArc(P0, lf, arcE, r);
+      if (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6) l.a = { ...g.lineEnd }; else l.b = { ...g.lineEnd };
+      arcE.a = { ...g.arc.a }; arcE.b = { ...g.arc.b }; arcE.m = { ...g.arc.m };
+      sketch.push({ t: 'arc', ...g.fillet }); filR = r; msg(`Fillet R${+r.toFixed(3)} mm added between a line and an arc.`); props();
+      filPt = null; $('dimbox').style.display = 'none'; draw(); return;
+    }
     const far = (l: Extrude_L) => (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6 ? l.b : l.a);
     const f = filletCorner(P0, far(ls[0]), far(ls[1]), r);
     const set = (l: Extrude_L, q: P) => { if (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6) l.a = { ...q }; else l.b = { ...q }; };
