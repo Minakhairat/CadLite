@@ -909,11 +909,24 @@ $('dok').onclick = async () => {
   } catch (err) { msg((err as Error).message); }
 };
 let modKind: 'fillet' | 'chamfer' | 'shell' | null = null; let modEdit: number | null = null;
+function holePoints(): { x: number; y: number; f: number }[] {
+  const out: { x: number; y: number; f: number }[] = [];
+  features.forEach((f, i) => { if (f.kind === 'hole' || (f.plane && f.plane !== 'XY') || (f.orient && ((f.orient.r ?? 0) !== 0 || f.orient.f))) return; const ents = (f.src?.ents ?? f.sketch) as any[]; ents.forEach((e) => { if (e && e.t === 'point' && e.p) out.push({ x: e.p.x, y: e.p.y, f: i + 1 }); }); });
+  return out;
+}
+function fillHolePts() {
+  const sel = document.getElementById('hpt') as HTMLSelectElement | null; if (!sel) return;
+  const pts = holePoints(); sel.innerHTML = '';
+  const o0 = document.createElement('option'); o0.value = ''; o0.textContent = pts.length ? 'Typed X / Y' : 'Typed X / Y (no sketch points on the XY plane)'; sel.append(o0);
+  pts.forEach((q, k) => { const o = document.createElement('option'); o.value = String(k); o.textContent = `Center point (${q.x}, ${q.y}) from Feature ${q.f}`; sel.append(o); });
+  sel.onchange = () => { if (sel.value === '') return; const q = pts[+sel.value]; ($('hx') as HTMLInputElement).value = String(q.x); ($('hy') as HTMLInputElement).value = String(q.y); $('mdlgmsg').textContent = `Hole centre taken from the sketch point at (${q.x}, ${q.y}). A COPY of the position: it does not follow the point if the sketch is edited. Only XY-plane sketches are listed.`; };
+}
 const holeUI = (on: boolean) => document.querySelectorAll<HTMLElement>('#mdlg .holeonly').forEach((e) => (e.style.display = on ? '' : 'none'));
 function openHole() {
   if (!features.length) { msg('Create a solid first.'); return; }
   modKind = 'hole' as never; $('mdlgt').textContent = 'Hole'; holeUI(true); ($('mdlg').querySelector('.notholeonly') as HTMLElement).style.display = 'none';
   $('mlabel').textContent = 'Depth (mm, 0 = through all)'; ($('msize') as HTMLInputElement).value = '0'; ($('msize') as HTMLInputElement).min = '0';
+  fillHolePts();
   $('mdlgmsg').textContent = 'Drilled from the top of the solid, along -Z. Position is on the sketch plane (mm).'; $('mdlg').classList.add('show');
 }
 $('hol').onclick = openHole;
