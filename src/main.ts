@@ -160,6 +160,7 @@ function draw() {
   const o = toScreen({ x: 0, y: 0 }); ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#d33'; ctx.beginPath(); ctx.moveTo(0, o.y); ctx.lineTo(sk.width, o.y); ctx.stroke();
   ctx.strokeStyle = '#2a2'; ctx.beginPath(); ctx.moveTo(o.x, 0); ctx.lineTo(o.x, sk.height); ctx.stroke();
+  if (dofCircFixed.size) { ctx.font = `${12 * dpr}px sans-serif`; ctx.fillStyle = '#1a7f37'; ctx.fillText('Green square on a circle: its constraints fix it, with the lines held where they are now (the lines themselves may still be free)', 10 * dpr, (dofVal !== null ? 38 : 20) * dpr); }
   if (dofVal !== null) { ctx.font = `${12 * dpr}px sans-serif`; ctx.fillStyle = dofVal === 0 ? '#1a7f37' : '#34506f'; ctx.fillText(dofVal === 0 ? 'Lines: fully constrained (0 DOF)' : `Lines: ${dofVal} DOF left (end points; circles and arcs not counted)`, 10 * dpr, 20 * dpr); }
   ctx.fillStyle = '#d33'; ctx.font = `${11 * dpr}px sans-serif`; const ax = sketchAxesWorld(curPlane, curOrient); ctx.fillText('X (' + ax.x + ')', sk.width - 70 * dpr, o.y - 4 * dpr); ctx.fillStyle = '#2a2'; ctx.fillText('Y (' + ax.y + ')', o.x + 5 * dpr, 14 * dpr); ctx.fillStyle = '#34506f'; ctx.fillText(`${curPlane} plane, normal ${ax.n}`, 8 * dpr, sk.height - 8 * dpr);
   ctx.strokeStyle = '#1f6fd1'; ctx.lineWidth = 2 * dpr;
