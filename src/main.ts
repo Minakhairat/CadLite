@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
-import { solveSketch, solveCircleSketch, dofSketch, getW, Con, L } from './solver';
+import { solveSketch, solveCircleSketch, dofSketch, dofLineMarks, getW, Con, L } from './solver';
 import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
@@ -67,9 +67,11 @@ function applyArcRels() {
     const bad = k === 'aconc' ? Math.hypot(ac.c.x - rc.c.x, ac.c.y - rc.c.y) > 1e-6 * Math.max(1, rc.r) : Math.abs(ac.r - rc.r) > 1e-6 * Math.max(1, rc.r);
     if (bad) throw new Error('These arc constraints conflict: they cannot all be true for the same arc. Nothing was kept.'); }
 }
-let dofVal: number | null = null, dofSeq = 0;
+let dofVal: number | null = null, dofSeq = 0, dofFixed = new Set<L>();
 function refreshDof() { const ls = sketch.filter((e) => e.t === 'line') as L[]; const n = ++dofSeq; if (!ls.length) { if (dofVal !== null) { dofVal = null; draw(); } return; }
-  dofSketch(ls, cons.filter((c) => LINE_KINDS.includes(c.k))).then((d) => d >= 0 ? d : null, () => null).then((d) => { if (n !== dofSeq) return; if (d !== dofVal) { dofVal = d; draw(); } }); }
+  const lc = cons.filter((c) => LINE_KINDS.includes(c.k));
+  (lc.length ? dofLineMarks(ls, lc) : Promise.resolve(ls.map(() => false))).then((mk) => { if (n !== dofSeq) return; const nm = new Set<L>(); ls.forEach((l, i) => { if (mk[i]) nm.add(l); }); const same = nm.size === dofFixed.size && [...nm].every((x) => dofFixed.has(x)); if (!same) { dofFixed = nm; draw(); } }, () => undefined);
+  dofSketch(ls, lc).then((d) => d >= 0 ? d : null, () => null).then((d) => { if (n !== dofSeq) return; if (d !== dofVal) { dofVal = d; draw(); } }); }
 /** Persistent Point-on-end relation (kind 'pcoin'): the Point marker follows the chosen end point of a line, re-applied after every solve. */
 function applyPointRels() {
   for (const c of cons) { const k = c.k as string; if (!PT_KINDS.includes(k)) continue; const pe = c.l as unknown as PointE, tg = c.m as unknown as Entity; if (!sketch.includes(pe as unknown as Entity) || !sketch.includes(tg)) continue;
@@ -156,6 +158,7 @@ function draw() {
   const c = current(); const all = c ? [...sketch, c] : sketch;
   for (const e of all) { ctx.setLineDash(e.cn ? [8 * dpr, 5 * dpr] : []); ctx.strokeStyle = selE.includes(e) ? '#e8590c' : e.cn ? '#7a8794' : '#1f6fd1'; if (isPt(e)) { const q = toScreen((e as PointE).p); ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(q.x - 6 * dpr, q.y); ctx.lineTo(q.x + 6 * dpr, q.y); ctx.moveTo(q.x, q.y - 6 * dpr); ctx.lineTo(q.x, q.y + 6 * dpr); ctx.stroke(); ctx.beginPath(); ctx.arc(q.x, q.y, 2.5 * dpr, 0, 7); ctx.fillStyle = ctx.strokeStyle; ctx.fill(); } else if (e.t === 'line' || e.t === 'arc') { path(outline(e), false); ctx.stroke(); } else { path(outline(e), true); ctx.fillStyle = selE.includes(e) ? '#e8590c22' : '#1f6fd11a'; ctx.fill(); ctx.stroke(); } } ctx.strokeStyle = '#1f6fd1';
   ctx.setLineDash([]);
+  for (const e of sketch) if (e.t === 'line' && dofFixed.has(e as L)) { const q = toScreen({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }); ctx.fillStyle = '#1a7f37'; ctx.fillRect(q.x - 4 * dpr, q.y - 4 * dpr, 8 * dpr, 8 * dpr); }
   if (winA && winB) { const a = toScreen(winA), b = toScreen(winB); const cross = winB.x < winA.x; ctx.save(); ctx.setLineDash(cross ? [6 * dpr, 4 * dpr] : []); ctx.strokeStyle = cross ? '#2a8a3a' : '#1f6fd1'; ctx.fillStyle = cross ? 'rgba(42,138,58,0.10)' : 'rgba(31,111,209,0.10)'; ctx.lineWidth = 1.2 * dpr; ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.restore(); }
   if (segPts.length && hover) {
     ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = tool === 'line' ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
@@ -924,6 +927,7 @@ function physCard() {
 $('physbtn').onclick = physCard;
 (window as any).__cad.phys = physProps;
 (window as any).__cad.dof = () => dofVal;
+(window as any).__cad.dofMarks = () => sketch.map((e, i) => e.t === 'line' ? [i, dofFixed.has(e as L)] : null).filter(Boolean);
 
 // Ribbon scroll affordance: edge arrows appear only when the ribbon is wider than the window.
 (() => {
