@@ -334,7 +334,7 @@ sk.addEventListener('pointerdown', (e) => {
     if (segPts.length === 3) { const [c, e1, q] = segPts; const a = Math.hypot(e1.x - c.x, e1.y - c.y), u = { x: (e1.x - c.x) / a, y: (e1.y - c.y) / a }, v = { x: -u.y, y: u.x }; const b = Math.abs((q.x - c.x) * v.x + (q.y - c.y) * v.y); segPts = [];
       if (b < 1e-9) { msg('Ellipse: the minor point is on the major axis. Click off the axis.'); draw(); return; }
       const pts: P[] = []; for (let i = 0; i < 72; i++) { const t = (i / 72) * 2 * Math.PI; pts.push({ x: c.x + u.x * a * Math.cos(t) + v.x * b * Math.sin(t), y: c.y + u.y * a * Math.cos(t) + v.y * b * Math.sin(t) }); }
-      sketch.push({ t: 'poly', pts }); props(); msg(`Ellipse added as a 72-segment polygon approximation: semi-major ${a.toFixed(3)} mm, semi-minor ${b.toFixed(3)} mm. It is not a true ellipse curve.`); }
+      sketch.push({ t: 'poly', pts, ell: { c: { ...c }, a, b, rot: (Math.atan2(u.y, u.x) * 180) / Math.PI } }); props(); msg(`Ellipse added: semi-major ${a.toFixed(3)} mm, semi-minor ${b.toFixed(3)} mm. The sketch shows it as a 72-segment polygon; Extrude builds the exact ellipse in the solid kernel. Not parametric. Moving or editing it turns it into a plain polygon.`); }
     hover = p; draw(); return;
   }
   if (tool === 'slot') {
@@ -408,7 +408,7 @@ const gridH = new THREE.GridHelper(200, 20, 0x7f93b5, 0xaebfda); gridH.rotateX(M
 const group = new THREE.Group(); scene.add(group);
 let shown: KBody[] | null = null; // kernel result (Join/Cut/Intersect); null = draw each feature
 const isMod = (k: string) => k === 'hole' || k === 'fillet' || k === 'chamfer' || k === 'shell';
-const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' || isMod(f.kind));
+const needsKernel = (fs: Feature[]) => fs.some((f) => (f.op ?? 'new') !== 'new' || isMod(f.kind) || f.sketch.some((e) => e.t === 'poly' && !!e.ell));
 const geoOf = (f: { kind: Feature['kind']; sketch: any; depth: number; dir?: any; plane?: any; orient?: any }) => (isMod(f.kind) ? new THREE.BufferGeometry() : buildGeometry(f.kind as 'extrude' | 'revolve', f.sketch, f.depth, f.dir, f.plane, f.orient));
 const specOf = (f: Feature): Spec => ({ kind: f.kind, sketch: f.sketch, depth: f.depth, op: f.op, dir: f.dir, edges: f.edges, plane: isMod(f.kind) ? undefined : f.plane, orient: isMod(f.kind) ? undefined : f.orient });
 /** Try a new feature list. Computes the solid when Join/Cut/Intersect is involved. Returns false (and a message) when it fails. */
