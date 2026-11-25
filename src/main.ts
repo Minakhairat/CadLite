@@ -7,7 +7,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
-import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3 } from './geometry';
+import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -172,8 +172,7 @@ function draw() {
 function ptRaw(e: PointerEvent): P { const r = sk.getBoundingClientRect(); return toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); }
 function pt(e: PointerEvent): P { const r = sk.getBoundingClientRect(); const w = toWorld((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio); const g = grid(); const tg = snapTarget(w); if (tg) return tg; return { x: snap(w.x, g), y: snap(w.y, g) }; }
 /** Snap to a Point marker, a line end point or a circle centre when the pointer is within 10 px of one. Points win over the others. */
-const splineSample = (q: P[]): P[] => { const n = q.length, out: P[] = []; for (let i = 0; i < n; i++) { const p0 = q[(i + n - 1) % n], p1 = q[i], p2 = q[(i + 1) % n], p3 = q[(i + 2) % n]; for (let s = 0; s < 16; s++) { const t = s / 16, t2 = t * t, t3 = t2 * t; out.push({ x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3), y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3) }); } } return out; };
-const commitSpline = () => { if (polyPts.length < 3) return; const fit = polyPts.map((q) => ({ x: q.x, y: q.y })); sketch.push({ t: 'poly', pts: splineSample(fit), spl: fit }); polyPts = []; props(); msg(`Closed spline through ${fit.length} fit points added. The sketch shows a sampled curve; Extrude builds the smooth spline in the solid kernel, so the two can differ slightly. Not parametric. Move, Copy, Rotate, Mirror, Scale and Patterns keep it; Stretch through it is refused.`); };
+const commitSpline = () => { if (polyPts.length < 3) return; const fit = polyPts.map((q) => ({ x: q.x, y: q.y })); sketch.push({ t: 'poly', pts: splineSample(fit), spl: fit }); polyPts = []; props(); msg(`Closed spline added (${fit.length} points). Not parametric.`); };
 function snapTarget(w: P): P | null { const lim = (10 * devicePixelRatio) / cam.s; let best: P | null = null, bd = lim; const tryP = (q: P, bonus = 0) => { const d = Math.hypot(q.x - w.x, q.y - w.y) - bonus; if (d < bd) { bd = d; best = { x: q.x, y: q.y }; } };
   for (const e of sketch) { if (isPt(e)) tryP((e as PointE).p, lim * 0.5); else if (e.t === 'line') { tryP(e.a); tryP(e.b); tryP({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }); } else if (e.t === 'circle') tryP(e.c); else if (e.t === 'arc') { tryP(e.a); tryP(e.b); } }
   const ls = sketch.filter((e) => e.t === 'line') as Extract<Entity, { t: 'line' }>[];
@@ -336,7 +335,7 @@ sk.addEventListener('pointerdown', (e) => {
     if (segPts.length === 3) { const [c, e1, q] = segPts; const a = Math.hypot(e1.x - c.x, e1.y - c.y), u = { x: (e1.x - c.x) / a, y: (e1.y - c.y) / a }, v = { x: -u.y, y: u.x }; const b = Math.abs((q.x - c.x) * v.x + (q.y - c.y) * v.y); segPts = [];
       if (b < 1e-9) { msg('Ellipse: the minor point is on the major axis. Click off the axis.'); draw(); return; }
       const pts: P[] = []; for (let i = 0; i < 72; i++) { const t = (i / 72) * 2 * Math.PI; pts.push({ x: c.x + u.x * a * Math.cos(t) + v.x * b * Math.sin(t), y: c.y + u.y * a * Math.cos(t) + v.y * b * Math.sin(t) }); }
-      sketch.push({ t: 'poly', pts, ell: { c: { ...c }, a, b, rot: (Math.atan2(u.y, u.x) * 180) / Math.PI } }); props(); msg(`Ellipse added: semi-major ${a.toFixed(3)} mm, semi-minor ${b.toFixed(3)} mm. The sketch shows it as a 72-segment polygon; Extrude builds the exact ellipse in the solid kernel. Not parametric (no ellipse dimensions or constraints). Move, Copy, Rotate, Mirror, Scale and Patterns keep it exact.`); }
+      sketch.push({ t: 'poly', pts, ell: { c: { ...c }, a, b, rot: (Math.atan2(u.y, u.x) * 180) / Math.PI } }); props(); msg(`Ellipse added: semi-axes ${a.toFixed(2)} and ${b.toFixed(2)} mm. Not parametric.`); }
     hover = p; draw(); return;
   }
   if (tool === 'slot') {
