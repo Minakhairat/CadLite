@@ -280,8 +280,8 @@ sk.addEventListener('pointerdown', (e) => {
     if (f.l.t === 'arc' || best.l.t === 'arc') {
       const ar = (f.l.t === 'arc' ? f : best) as { l: Extract<Entity, { t: 'arc' }>; e: number }, lr = (f.l.t === 'arc' ? best : f) as { l: Extract<Entity, { t: 'line' }>; e: number };
       if (cons.some((x) => (x.k as string) === 'aend' && (x.l as unknown) === ar.l && ((x.v ?? 0) >> 1 & 1) === ar.e)) { msg('That arc end point is already attached to a line end.'); return; }
-      const c: Con = { k: 'aend', l: ar.l as unknown as L, m: lr.l as unknown as L, v: (ar.e << 1) | lr.e }; const old = { a: ar.l.a, b: ar.l.b }; cons.push(c); msg('Solving...');
-      solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Arc end on line end: the arc end follows that line end (one way: the line end drives the arc end). Moving the arc end does not move the line.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); ar.l.a = old.a; ar.l.b = old.b; msg((er as Error).message); draw(); });
+      const c: Con = { k: 'aend', l: ar.l as unknown as L, m: lr.l as unknown as L, v: (ar.e << 1) | lr.e }; const old = { a: ar.l.a, b: ar.l.b, m: ar.l.m }; cons.push(c); msg('Solving...');
+      solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Arc end on line end: the arc end follows that line end (one way: the line end drives the arc end). Moving the arc end does not move the line.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); ar.l.a = old.a; ar.l.b = old.b; ar.l.m = old.m; msg((er as Error).message); draw(); });
       return; }
     const c: Con = { k: 'coin', l: f.l as Extract<Entity, { t: 'line' }>, m: best.l, v: (f.e << 1) | best.e }; cons.push(c); msg('Solving...');
     solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
