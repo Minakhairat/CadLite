@@ -1,6 +1,6 @@
 // Solid modelling with OpenCascade (replicad). The replicad module is injected so the same code runs in the browser and in Node tests.
 import type * as Replicad from 'replicad';
-import { Entity, outline, inside } from './geometry';
+import { Entity, outline, inside, splineBeziers } from './geometry';
 
 export type Op = 'new' | 'join' | 'cut' | 'intersect';
 export type Dir = 'normal' | 'flip' | 'sym';
@@ -20,7 +20,7 @@ export function extrudeSolid(R: R, sketch: Entity[], h: number, z0: number): Rep
   const make = (e: Entity): Replicad.Shape3D => {
     if (e.t === 'rect') return R.makeBox([Math.min(e.a.x, e.b.x), Math.min(e.a.y, e.b.y), z0], [Math.max(e.a.x, e.b.x), Math.max(e.a.y, e.b.y), z0 + h]);
     if (e.t === 'circle') return R.makeCylinder(e.r, h, [e.c.x, e.c.y, z0], [0, 0, 1]);
-    if (e.t === 'poly' && e.spl && e.spl.length >= 3) { const sp = e.spl.map((q) => [q.x, q.y] as [number, number]); return (R as any).drawPointsInterpolation([...sp, sp[0]], { tolerance: 1e-6 }, { closeShape: true }).sketchOnPlane('XY', z0).extrude(h) as Replicad.Shape3D; }
+    if (e.t === 'poly' && e.spl && e.spl.length >= 3) { const bz = splineBeziers(e.spl); let dr: any = R.draw([bz[0].a.x, bz[0].a.y]); for (const s of bz) dr = dr.cubicBezierCurveTo([s.b.x, s.b.y], [s.c1.x, s.c1.y], [s.c2.x, s.c2.y]); return dr.close().sketchOnPlane('XY', z0).extrude(h) as Replicad.Shape3D; }
     if (e.t === 'poly' && e.ell) { const q = e.ell; let dr: any = (R as any).drawEllipse(q.a, q.b); if (q.rot) dr = dr.rotate(q.rot, [0, 0]); return dr.translate(q.c.x, q.c.y).sketchOnPlane('XY', z0).extrude(h) as Replicad.Shape3D; }
     let d: any;
     if (e.t === 'poly' && e.segs?.length) { // true arcs: keep arc edges exact
