@@ -708,7 +708,7 @@ function props() {
   refreshDof(); const p = $('props'); p.innerHTML = ''; p.classList.toggle('show', mode === 'sketch' && sketch.length > 0);
   sketch.forEach((e, i) => {
     const r = document.createElement('div'); r.className = 'row'; const g = document.createElement('div'); g.className = 'g';
-    const title = (t: string) => { const b = document.createElement('b'); b.textContent = t; r.append(b); };
+    const title = (t: string) => { const b = document.createElement('b'); b.textContent = t + (e.prj ? ` [projected from Feature ${e.prj}: static copy, construction, not linked]` : ''); r.append(b); };
     if (e.t === 'rect') {
       const x = Math.min(e.a.x, e.b.x), y = Math.min(e.a.y, e.b.y), w = Math.abs(e.b.x - e.a.x), h = Math.abs(e.b.y - e.a.y);
       const set = (nx: number, ny: number, nw: number, nh: number) => { e.a = { x: nx, y: ny }; e.b = { x: nx + nw, y: ny + nh }; };
@@ -1124,6 +1124,6 @@ document.getElementById('prjbtn')?.addEventListener('click', () => {
     for (const e of projectEdges(ed, curPlane, curOrient)) { const c = clone(e); if (c.t === 'line') { c.a = { x: rd(c.a.x), y: rd(c.a.y) }; c.b = { x: rd(c.b.x), y: rd(c.b.y) }; } else if (c.t === 'circle') { c.c = { x: rd(c.c.x), y: rd(c.c.y) }; c.r = rd(c.r); } c.prj = i + 1; if (have.has(nk(c, i + 1))) continue; sketch.push(c); if (c.t === 'line') lines++; else circles++; }
   }
   ck(); props(); draw();
-  msg(lines + circles ? `Project Geometry: ${lines} line(s) and ${circles} circle(s) added as construction geometry from Feature ${idx.map((i) => i + 1).join(', ')}. STATIC COPY: not linked, so editing that feature later does NOT update them. ${skipped ? skipped + ' arc/ellipse/spline edge(s) were not projected. ' : ''}Edges of the profile only, not of the final body.` : 'Project Geometry: nothing new to add (already projected, or the profile lies edge-on to this plane).');
+  msg(lines + circles ? `Project Geometry: ${lines} line(s), ${circles} circle(s) from Feature ${idx.map((i) => i + 1).join(', ')}. STATIC COPY: does NOT update if the feature changes.${skipped ? ' ' + skipped + ' arc/ellipse/spline skipped.' : ''}` : 'Project Geometry: nothing new to add (already projected, or the profile lies edge-on to this plane).');
 });
 document.getElementById('prmbtn')?.addEventListener('click', () => { if (mode !== 'sketch') { msg('Parameters: start or edit a sketch first.'); return; } prmBox.style.display = prmBox.style.display === 'none' ? 'block' : 'none'; if (prmBox.style.display !== 'none') refreshPrm(); });
