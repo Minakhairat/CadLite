@@ -2,7 +2,7 @@
 import { make_gcs_wrapper } from '@salusoft89/planegcs';
 import wasmUrl from '@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url';
 import { solveLines, L, Con } from './solver-core';
-import { solveCircles, C, CCon } from './circle-solver-core';
+import { solveCircles, circleFixedMarks, C, CCon } from './circle-solver-core';
 export type { Con, L };
 let w: Promise<unknown> | null = null;
 /** Load the planegcs WebAssembly solver on first use, then solve. */
@@ -34,4 +34,10 @@ export async function dofLineMarks(lines: L[], cons: Con[]): Promise<boolean[]> 
     out.push(d >= 0 && d === base);
   }
   return out;
+}
+
+/** Per circle: true when the circle constraints already fix its centre and radius. Works on copies of the numbers. */
+export async function dofCircleMarks(lines: L[], circles: C[], cons: CCon[]): Promise<boolean[]> {
+  if (!w) w = make_gcs_wrapper(wasmUrl).catch((e) => { w = null; throw e; });
+  return circleFixedMarks((await w) as never, lines, circles, cons);
 }
