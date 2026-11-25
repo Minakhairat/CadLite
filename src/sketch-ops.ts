@@ -75,3 +75,14 @@ export function arcConcentric(e: Extract<Entity, { t: 'arc' }>, c: P): Entity | 
 export function arcEqualRadius(e: Extract<Entity, { t: 'arc' }>, r: number): Entity | null {
   const k = circle3(e.a, e.b, e.m); if (!k || !(r > 1e-9) || !Number.isFinite(r)) return null; return transformEntity(e, scaleTf(k.c, r / k.r));
 }
+
+/** Plain-words status for an arc's constraints. This is a description of which relations are stored, not a degrees-of-freedom count: the arc solver does not count freedom, and end points are never constrained. */
+export function arcConstraintNote(kinds: string[]): string {
+  const has = (k: string) => kinds.includes(k);
+  const held: string[] = [];
+  if (has('tanla')) held.push('tangent to a line');
+  if (has('aconc')) held.push('concentric');
+  if (has('aeqr')) held.push('equal radius');
+  if (!held.length) return 'No arc constraint stored. Degrees of freedom are not counted for arcs.';
+  return `Stored: ${held.join(', ')}. The arc end points are NOT constrained and degrees of freedom are not counted for arcs.`;
+}
