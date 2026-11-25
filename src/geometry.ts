@@ -3,7 +3,7 @@ import * as THREE from 'three';
 export type P = { x: number; y: number };
 /** The editable form of a sketch (lines, arcs, constraints, dimensions) kept next to the finished profile so it can be edited again. */
 export type SketchPat = { k: 'prect' | 'pcirc'; src: number[]; cp: number[][]; tf: number[][] };
-export type SketchSrc = { ents: Entity[]; cons: { k: string; l: number; m?: number; n?: number; v?: number }[]; dims: { e: number; w: string; pos: P; x?: string }[]; pats?: SketchPat[]; prm?: { name: string; expr: string }[] };
+export type SketchSrc = { ents: Entity[]; cons: { k: string; l: number; m?: number; n?: number; v?: number }[]; dims: { e: number; w: string; pos: P; x?: string; v?: number }[]; pats?: SketchPat[]; prm?: { name: string; expr: string }[] };
 export type Seg = { a: P; b: P; m?: P }; // straight segment, or arc a -> m -> b
 export type Entity = (
   | { t: 'rect'; a: P; b: P }
