@@ -1,10 +1,10 @@
 {
-  "id": "./",
+  "id": "/CadLite/",
   "name": "MK CAD",
   "short_name": "MK CAD",
   "description": "2D sketch and 3D part modeling in the browser. Eng. Mina Khairat.",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/CadLite/",
+  "scope": "/CadLite/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#1e2127",
