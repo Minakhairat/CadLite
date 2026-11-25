@@ -38,3 +38,12 @@ if (offsetEntity(rect, -1.5) !== null) { console.error('FAIL rect collapse'); pr
   const c1 = arcConcentric(arc, { x: 5, y: 5 }) as any; const k1 = circle3(c1.a, c1.b, c1.m)!; near(k1.c.x, 5, 1e-9, 'concentric arc centre x'); near(k1.c.y, 5, 1e-9, 'concentric arc centre y'); near(k1.r, 10, 1e-9, 'concentric keeps radius');
   const e1 = arcEqualRadius(arc, 20) as any; const k2 = circle3(e1.a, e1.b, e1.m)!; near(k2.r, 20, 1e-9, 'equal radius sets 20'); near(k2.c.x, 0, 1e-9, 'equal radius keeps centre x'); near(Math.hypot(e1.a.x - e1.b.x, e1.a.y - e1.b.y), 20 * Math.SQRT2, 1e-9, 'equal radius keeps the 90 degree sweep (chord = r*sqrt2)');
   if (arcEqualRadius(arc, 0) !== null) { console.error('FAIL radius 0'); process.exit(1); } console.log('ok arc equal radius 0 refused'); }
+// Exact ellipse (optional ell on a poly) survives move, rotate, mirror and scale; refuses a distorting stretch
+const el: Entity = { t: 'poly', pts: [{ x: 25, y: 10 }, { x: 20, y: 12 }, { x: 15, y: 10 }, { x: 20, y: 8 }], ell: { c: { x: 20, y: 10 }, a: 5, b: 2, rot: 0 } };
+let q = transformEntity(el, moveTf(3, -4)) as any; near(q.ell.c.x, 23, 1e-9, 'ellipse move centre x'); near(q.ell.c.y, 6, 1e-9, 'ellipse move centre y'); near(q.ell.a, 5, 1e-9, 'ellipse move keeps a');
+q = transformEntity(el, rotateTf({ x: 0, y: 0 }, 90)) as any; near(q.ell.c.x, -10, 1e-9, 'ellipse rotate 90 centre x'); near(q.ell.c.y, 20, 1e-9, 'ellipse rotate 90 centre y'); near(q.ell.rot, 90, 1e-9, 'ellipse rotate 90 angle'); near(q.ell.b, 2, 1e-9, 'ellipse rotate keeps b');
+q = transformEntity(el, mirrorTf({ x: 0, y: 0 }, { x: 1, y: 0 })) as any; near(q.ell.c.y, -10, 1e-9, 'ellipse mirror centre y'); near(q.ell.a, 5, 1e-9, 'ellipse mirror keeps a');
+q = scaleEntity(el, { x: 0, y: 0 }, 2) as any; near(q.ell.a, 10, 1e-9, 'ellipse scale a'); near(q.ell.b, 4, 1e-9, 'ellipse scale b'); near(q.ell.c.x, 40, 1e-9, 'ellipse scale centre x');
+let thrown = false; try { transformEntity(el, (p) => ({ x: p.x * 2, y: p.y })); } catch { thrown = true; } if (!thrown) { console.error('FAIL non-uniform transform must not silently distort an ellipse'); process.exit(1); } console.log('ok non-similar transform of an ellipse is refused');
+if (stretchEntity(el, { x0: 22, y0: 0, x1: 30, y1: 20 }, 3, 0) !== null) { console.error('FAIL partial stretch of an ellipse should be refused'); process.exit(1); } console.log('ok partial stretch of an ellipse is refused');
+near((stretchEntity(el, { x0: 0, y0: 0, x1: 50, y1: 50 }, 3, 1) as any).ell.c.x, 23, 1e-9, 'stretch window around the whole ellipse moves it');
