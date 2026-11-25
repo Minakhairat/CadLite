@@ -36,14 +36,3 @@ export function solveArcs(_w: unknown, lines: L[], arcs: Arc3[], cons: ArcCon[])
   }
   res.forEach((m, arc) => { arc.m = m; });
 }
-
-/** Degrees of freedom an arc has on its own: its two end points (4) plus how far it bulges (1) = 5. This solver holds the end points when it applies a tangent, and moves only the constrained arc for concentric and equal radius, so the constrained arc loses 1 per distinct tangent line, 2 per distinct concentric reference and 1 per distinct equal radius reference. The reference arc or line is not changed. It does NOT include DOF shared with lines (arc end points are not tied to line end points here) and it cannot see redundant or conflicting relations beyond exact repeats. */
-export type ArcRel = { k: 'tanla' | 'aconc' | 'aeqr'; arc: object; other: object };
-export const ARC_OWN_DOF = 5;
-export function arcOwnDof(arcs: object[], rels: ArcRel[]): Map<object, number> {
-  const out = new Map<object, number>(); const seen = new Set<string>(); const ids = new Map<object, number>(); const id = (o: object) => { if (!ids.has(o)) ids.set(o, ids.size); return ids.get(o) as number; };
-  for (const a of arcs) out.set(a, ARC_OWN_DOF);
-  for (const r of rels) { if (!out.has(r.arc)) continue; const key = `${r.k}|${id(r.arc)}|${id(r.other)}`; if (seen.has(key)) continue; seen.add(key);
-    out.set(r.arc, Math.max(0, (out.get(r.arc) as number) - (r.k === 'aconc' ? 2 : 1))); }
-  return out;
-}
