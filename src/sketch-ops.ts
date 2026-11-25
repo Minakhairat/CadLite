@@ -86,3 +86,11 @@ export function arcConstraintNote(kinds: string[]): string {
   if (!held.length) return 'No arc constraint stored. Degrees of freedom are not counted for arcs.';
   return `Stored: ${held.join(', ')}. The arc end points are NOT constrained and degrees of freedom are not counted for arcs.`;
 }
+
+/** Two-way Point on end point. Decide who moved since the relation was last applied. 'drive': only the Point moved and the line may follow, so the line end takes the Point's place. 'follow': the line end moved (or both did, or the line must not move), so the Point goes back to the line end. */
+export function pointEndStep(last: { pt: P; end: P } | undefined, pt: P, end: P, lineLocked: boolean): 'drive' | 'follow' {
+  if (!last) return 'follow';
+  const d = (p: P, q: P) => Math.hypot(p.x - q.x, p.y - q.y);
+  const ptMoved = d(pt, last.pt) > 1e-9, endMoved = d(end, last.end) > 1e-9;
+  return ptMoved && !endMoved && !lineLocked ? 'drive' : 'follow';
+}
