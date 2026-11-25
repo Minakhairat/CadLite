@@ -29,6 +29,15 @@ export function outline(e: Entity): P[] {
   return e.pts;
 }
 /** Circle through three points, or null when collinear. */
+type Ln = { a: P; b: P };
+function lineCross(p: Ln, q: Ln): P | null { const r = { x: p.b.x - p.a.x, y: p.b.y - p.a.y }, s = { x: q.b.x - q.a.x, y: q.b.y - q.a.y }; const den = r.x * s.y - r.y * s.x; if (Math.abs(den) < 1e-9 * Math.hypot(r.x, r.y) * Math.hypot(s.x, s.y)) return null; const t = ((q.a.x - p.a.x) * s.y - (q.a.y - p.a.y) * s.x) / den; return { x: p.a.x + t * r.x, y: p.a.y + t * r.y }; }
+/** The circle inside the triangle made by three infinite lines, tangent to all three. null when two lines are parallel or the three meet in one point. */
+export function incircleOfLines(l1: Ln, l2: Ln, l3: Ln): { c: P; r: number } | null {
+  const v0 = lineCross(l1, l2), v1 = lineCross(l2, l3), v2 = lineCross(l3, l1); if (!v0 || !v1 || !v2) return null;
+  const a = Math.hypot(v1.x - v2.x, v1.y - v2.y), b = Math.hypot(v2.x - v0.x, v2.y - v0.y), c = Math.hypot(v0.x - v1.x, v0.y - v1.y), s = a + b + c;
+  const ar = Math.abs((v1.x - v0.x) * (v2.y - v0.y) - (v2.x - v0.x) * (v1.y - v0.y)) / 2; if (ar < 1e-9 || s < 1e-9) return null;
+  return { c: { x: (a * v0.x + b * v1.x + c * v2.x) / s, y: (a * v0.y + b * v1.y + c * v2.y) / s }, r: (2 * ar) / s };
+}
 export function circle3(a: P, b: P, m: P): { c: P; r: number } | null {
   const d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y));
   if (Math.abs(d) < 1e-9) return null;
