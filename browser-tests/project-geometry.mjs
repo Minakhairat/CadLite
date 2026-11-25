@@ -56,7 +56,7 @@ ok('4 lines projected',E.length===4&&E.every(e=>e[0]==='line'));
 ok('all construction and tagged Feature 1',E.every(e=>e[1]===true&&e[2]===1));
 const xs=E.flatMap(e=>[e[3][0],e[4][0]]),ys=E.flatMap(e=>[e[3][1],e[4][1]]);
 ok('XZ view is 40 wide, 10 tall from origin',Math.min(...xs)===0&&Math.max(...xs)===40&&Math.min(...ys)===0&&Math.max(...ys)===10);
-ok('Properties rows are labelled projected, static copy',(await p.evaluate(()=>document.querySelector('#props').innerText)).includes('projected from Feature 1: static copy'));
+ok('Properties rows say projected, matches the source now, static copy not linked',(await p.evaluate(()=>document.querySelector('#props').innerText)).includes('projected from Feature 1: matches the source now'));
 ok('message says static copy not linked',/STATIC COPY/.test(m1)&&/NOT update/.test(m1));
 await p.screenshot({path:'/tmp/prj-live.png'});
 await p.click('#prjbtn');await w(400);
