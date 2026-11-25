@@ -12,7 +12,7 @@ export type Entity = (
   | { t: 'line'; a: P; b: P }
   | { t: 'point'; p: P } // point: a marker, never part of the profile
   | { t: 'arc'; a: P; b: P; m: P } // arc: start a, end b, passing through m
-) & { cn?: boolean }; // cn: construction shape, drawn dashed, never part of the profile
+) & { cn?: boolean; prj?: number }; // cn: construction shape, drawn dashed, never part of the profile. prj: projected from extrude Feature number prj (1-based); a static copy, not linked
 export type Feature = { kind: 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'shell' | 'hole'; edges?: 'all' | 'vertical' | 'top' | 'bottom'; src?: SketchSrc; depth: number; sketch: Entity[]; geo: THREE.BufferGeometry; op?: 'new' | 'join' | 'cut' | 'intersect'; dir?: 'normal' | 'flip' | 'sym'; plane?: 'XY' | 'XZ' | 'YZ'; orient?: { r?: 0 | 1 | 2 | 3; f?: boolean } };
 
 export function snap(v: number, g = 1) { return Math.round(v / g) * g; }
