@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'slotca' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -423,6 +423,20 @@ sk.addEventListener('pointerdown', (e) => {
       if (wd < 1e-9) { msg('Slot: the width point is on the centre line. Click off the line.'); draw(); return; }
       const A1 = { x: c1.x + nn.x * wd, y: c1.y + nn.y * wd }, A2 = { x: c2.x + nn.x * wd, y: c2.y + nn.y * wd }, B2 = { x: c2.x - nn.x * wd, y: c2.y - nn.y * wd }, B1 = { x: c1.x - nn.x * wd, y: c1.y - nn.y * wd };
       sketch.push({ t: 'line', a: A1, b: A2 }, { t: 'arc', a: A2, b: B2, m: { x: c2.x + d.x * wd, y: c2.y + d.y * wd } }, { t: 'line', a: B2, b: B1 }, { t: 'arc', a: B1, b: A1, m: { x: c1.x - d.x * wd, y: c1.y - d.y * wd } }); props(); draw(); msg(`Slot added: width ${(2 * wd).toFixed(3)} mm, centre distance ${L.toFixed(3)} mm, centred on the first click.`); }
+    hover = p; draw(); return;
+  }
+  if (tool === 'slotca') {
+    segPts.push(p);
+    if (segPts.length === 2) { if (Math.hypot(segPts[1].x - segPts[0].x, segPts[1].y - segPts[0].y) < 1e-9) { segPts = []; msg('Slot: the start point must differ from the arc centre.'); draw(); return; } msg('Now click the end direction (the slot runs counter-clockwise from the start).'); }
+    if (segPts.length === 3) { const [o, s0, q] = segPts; if (Math.hypot(q.x - o.x, q.y - o.y) < 1e-9) { segPts = [segPts[0], segPts[1]]; msg('Slot: the end direction cannot be the arc centre.'); draw(); return; } msg('Now click a point at the slot half-width from the centre arc (inside or outside it).'); }
+    if (segPts.length === 4) { const [o, s0, q, wp] = segPts; segPts = []; const R = Math.hypot(s0.x - o.x, s0.y - o.y), a0 = Math.atan2(s0.y - o.y, s0.x - o.x), a1 = Math.atan2(q.y - o.y, q.x - o.x), wd = Math.abs(Math.hypot(wp.x - o.x, wp.y - o.y) - R);
+      let sw = a1 - a0; while (sw <= 1e-9) sw += 2 * Math.PI; while (sw > 2 * Math.PI) sw -= 2 * Math.PI;
+      if (Math.abs(sw - 2 * Math.PI) < 1e-9) { msg('Slot: the end direction equals the start. Pick a different end direction.'); draw(); return; }
+      if (wd < 1e-9) { msg('Slot: the width point is on the centre arc. Click inside or outside it.'); draw(); return; }
+      if (wd >= R - 1e-9) { msg(`Slot: the half-width ${+wd.toFixed(3)} mm must be smaller than the centre arc radius ${+R.toFixed(3)} mm.`); draw(); return; }
+      const at = (rr: number, an: number): P => ({ x: o.x + rr * Math.cos(an), y: o.y + rr * Math.sin(an) }), am = a0 + sw / 2;
+      const cap = (an: number, sgn: number): P => ({ x: o.x + R * Math.cos(an) + sgn * wd * -Math.sin(an), y: o.y + R * Math.sin(an) + sgn * wd * Math.cos(an) });
+      sketch.push({ t: 'arc', a: at(R + wd, a0), b: at(R + wd, a0 + sw), m: at(R + wd, am) }, { t: 'arc', a: at(R + wd, a0 + sw), b: at(R - wd, a0 + sw), m: cap(a0 + sw, 1) }, { t: 'arc', a: at(R - wd, a0 + sw), b: at(R - wd, a0), m: at(R - wd, am) }, { t: 'arc', a: at(R - wd, a0), b: at(R + wd, a0), m: cap(a0, -1) }); props(); draw(); msg(`Slot added: arc slot, centre radius ${+R.toFixed(3)} mm, width ${+(2 * wd).toFixed(3)} mm, sweep ${+((sw * 180) / Math.PI).toFixed(3)} deg.`); }
     hover = p; draw(); return;
   }
   if (tool === 'slot') {
