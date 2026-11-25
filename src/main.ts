@@ -6,8 +6,8 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
-import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
+import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
+import { SketchPat, SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -142,6 +142,7 @@ function dimApply(e: Entity, w: Dim['w'], v: number) {
 }
 const dimText = (d: Dim) => { const v = dimValue(d.e, d.w); return (d.w === 'dia' ? '\u00D8' : d.w === 'rad' ? 'R' : '') + (+v.toFixed(3)); };
 function draw() {
+  refreshPats();
   if (mode !== 'sketch') return;
   ck();
   const dpr = devicePixelRatio; ctx.clearRect(0, 0, sk.width, sk.height);
@@ -646,16 +647,28 @@ function props() {
     else if (e.t === 'arc') title(`Arc ${i + 1} (3-point)`);
     else if (isPt(e)) { const pe = e as PointE; title(`Point ${i + 1}`); g.append(numField('X (mm)', pe.p.x, (n) => (pe.p.x = n)), numField('Y (mm)', pe.p.y, (n) => (pe.p.y = n))); }
     else title(`Polygon ${i + 1} (${e.pts.length} points)`);
-    const del = document.createElement('button'); del.textContent = 'Delete'; del.onclick = () => { sketch.splice(i, 1); draw(); props(); };
+    const role = patRole(e);
+    if (role) { const nt = document.createElement('i'); nt.textContent = role === 'copy' ? ' (driven by an associative pattern: read-only, edit the source shape)' : ' (pattern source: its copies follow edits made here)'; nt.style.fontSize = '11px'; r.append(nt); if (role === 'copy') g.querySelectorAll('input').forEach((x) => { x.disabled = true; }); }
+    const del = document.createElement('button'); del.textContent = 'Delete'; del.onclick = () => { const was = patRole(e); sketch.splice(i, 1); draw(); props(); if (was === 'src') msg('Deleted a pattern source: the pattern is dissolved and its copies are now plain shapes.'); else if (was === 'copy') msg('Deleted one pattern copy: the other copies still follow the source.'); };
     r.append(g, del); p.append(r);
   });
 }
 
 
 // ---------- sketch editing: select, move, copy, rotate, mirror, offset, delete, undo/redo ----------
+type Pat = { k: 'prect' | 'pcirc'; src: Entity[]; cp: (Entity | undefined)[][]; tf: number[][] };
+let pats: Pat[] = [];
+const patTfOf = (k: Pat['k'], r: number[]): Tf => (k === 'prect' ? moveTf(r[0], r[1]) : rotateTf({ x: r[1], y: r[2] }, r[0]));
+/** Associative patterns: each copy is recomputed from its source shape, so editing the source in place updates the copies. A pattern is dissolved (copies stay as plain shapes) when a source shape is deleted or replaced. */
+const patRole = (e: Entity): 'src' | 'copy' | null => { for (const p of pats) { if (p.src.includes(e)) return 'src'; if (p.cp.some((g) => g.includes(e))) return 'copy'; } return null; };
+function refreshPats() {
+  if (!pats.length) return; const have = new Set<Entity>(sketch);
+  pats = pats.filter((p) => p.src.every((e) => have.has(e)));
+  for (const p of pats) p.cp.forEach((grp, gi) => { const f = patTfOf(p.k, p.tf[gi]); grp.forEach((c, k) => { if (!c || !have.has(c)) return; const nw = transformEntity(p.src[k], f) as unknown as Record<string, unknown>; const cur = c as unknown as Record<string, unknown>; if (JSON.stringify(nw) === JSON.stringify(cur)) return; for (const key of Object.keys(cur)) delete cur[key]; Object.assign(cur, nw); }); });
+}
 function fullSnap(): SketchSrc {
-  const ix = (o: unknown) => sketch.indexOf(o as Entity);
-  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })) };
+  refreshPats(); const ix = (o: unknown) => sketch.indexOf(o as Entity);
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
 }
 function ck() {
   if (restoring || mode !== 'sketch') return;
@@ -687,7 +700,7 @@ function pickEnt(p: P, add: boolean): boolean {
 const usedByCon = (e: Entity) => cons.some((c) => c.l === (e as unknown) || c.m === (e as unknown) || c.n === (e as unknown)) || dims.some((d) => d.e === e);
 function toggleConstruction() { if (!selE.length) { msg('Select shapes first (Select tool), then press Construction.'); return; } const to = !selE.every((e) => e.cn); for (const e of selE) { if (to) e.cn = true; else delete e.cn; } ck(); props(); draw(); msg(to ? `${selE.length} shape(s) are now construction (dashed, not part of the profile).` : `${selE.length} shape(s) are normal again.`); }
 const xconEl = document.getElementById('xcon'); if (xconEl) xconEl.onclick = toggleConstruction;
-function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).`); }
+function deleteSel() { if (!selE.length) { msg('Select shapes first (Select tool).'); return; } const n = selE.length; const hadSrc = selE.some((e) => patRole(e) === 'src'); sketch = sketch.filter((e) => !selE.includes(e)); selE = []; props(); draw(); msg(`Deleted ${n} shape(s).` + (hadSrc ? ' A pattern source was deleted: that pattern is dissolved and its copies are now plain shapes.' : '')); }
 type XOp = 'move' | 'copy' | 'rot' | 'mir' | 'off' | 'scale' | 'stretch' | 'prect' | 'pcirc';
 let lastWin = { x0: 0, y0: 0, x1: 10, y1: 10 };
 let xop: XOp = 'move';
@@ -697,20 +710,21 @@ function xOpen(op: XOp) {
   if (!selE.length) { tool = 'select'; refreshButtons(); msg('Select the shapes first: click them with the Select tool (Ctrl+click adds), then press the command again.'); return; }
   xop = op; const L = (t: string, id: string, v: string) => `<label>${t}<input id="${id}" type="number" step="any" value="${v}"/></label>`;
   const T = { move: 'Move', copy: 'Copy', rot: 'Rotate', mir: 'Mirror', off: 'Offset', scale: 'Scale', stretch: 'Stretch', prect: 'Rectangular Pattern', pcirc: 'Circular Pattern' }[op]; $('xt').textContent = `${T} (${selE.length} selected)`;
+  const assoc = () => `<label style="display:flex;gap:6px;align-items:center"><input id="xassoc" type="checkbox" style="width:auto"/>Associative (copies follow the original shapes when they are edited in place; copies themselves cannot be edited)</label>`;
   const keep = (on: boolean) => `<label style="display:flex;gap:6px;align-items:center"><input id="xkeep" type="checkbox" style="width:auto" ${on ? 'checked' : ''}/>Keep the original</label>`;
   $('xin').innerHTML = op === 'move' ? L('X distance (mm)', 'xa', '0') + L('Y distance (mm)', 'xb', '0')
     : op === 'copy' ? L('X offset (mm)', 'xa', '10') + L('Y offset (mm)', 'xb', '0') + L('Number of copies', 'xn', '1')
     : op === 'rot' ? L('Angle (deg, counter-clockwise)', 'xa', '90') + L('Centre X (mm)', 'xb', '0') + L('Centre Y (mm)', 'xc', '0') + keep(false)
     : op === 'mir' ? `<label>Axis<select id="xax"><option value="y">Y axis (x = 0)</option><option value="x">X axis (y = 0)</option><option value="c">Line through two points</option></select></label>` + L('Point 1 X', 'xa', '0') + L('Point 1 Y', 'xb', '0') + L('Point 2 X', 'xc', '0') + L('Point 2 Y', 'xd', '10') + keep(true)
-    : op === 'prect' ? L('Direction 1: count (including the original)', 'xa', '3') + L('Direction 1: spacing X (mm)', 'xb', '10') + L('Direction 1: spacing Y (mm)', 'xc', '0') + L('Direction 2: count (including the original)', 'xd', '2') + L('Direction 2: spacing X (mm)', 'xe', '0') + L('Direction 2: spacing Y (mm)', 'xf2', '10')
-    : op === 'pcirc' ? L('Count (including the original)', 'xa', '6') + L('Total angle (deg, 360 = full circle)', 'xb', '360') + L('Centre X (mm)', 'xc', '0') + L('Centre Y (mm)', 'xd', '0')
+    : op === 'prect' ? assoc() + L('Direction 1: count (including the original)', 'xa', '3') + L('Direction 1: spacing X (mm)', 'xb', '10') + L('Direction 1: spacing Y (mm)', 'xc', '0') + L('Direction 2: count (including the original)', 'xd', '2') + L('Direction 2: spacing X (mm)', 'xe', '0') + L('Direction 2: spacing Y (mm)', 'xf2', '10')
+    : op === 'pcirc' ? assoc() + L('Count (including the original)', 'xa', '6') + L('Total angle (deg, 360 = full circle)', 'xb', '360') + L('Centre X (mm)', 'xc', '0') + L('Centre Y (mm)', 'xd', '0')
     : op === 'stretch' ? L('Window corner 1 X (mm)', 'xa', String(lastWin.x0)) + L('Window corner 1 Y (mm)', 'xb', String(lastWin.y0)) + L('Window corner 2 X (mm)', 'xc', String(lastWin.x1)) + L('Window corner 2 Y (mm)', 'xd', String(lastWin.y1)) + L('Move X (mm)', 'xe', '5') + L('Move Y (mm)', 'xf2', '0')
     : op === 'scale' ? L('Scale factor (greater than 0)', 'xa', '2') + L('Base point X (mm)', 'xb', '0') + L('Base point Y (mm)', 'xc', '0') + keep(false)
     : L('Distance (mm). Positive = outward / left of the line', 'xa', '5');
   $('xdlg').classList.add('show');
 }
 function xApply() {
-  const sel0 = [...selE]; let out: Entity[] = []; let keepOrig = false; const bad = (m: string) => { msg(m); };
+  const sel0 = [...selE]; let out: Entity[] = []; let keepOrig = false; const patGrp: Entity[][] = [], patTf: number[][] = []; const bad = (m: string) => { msg(m); };
   try {
     if (xop === 'stretch') {
       const v = ['xa', 'xb', 'xc', 'xd', 'xe', 'xf2'].map(xf); if (!v.every(Number.isFinite)) return bad('Enter numbers.');
@@ -720,8 +734,8 @@ function xApply() {
       if (chg.some((i) => usedByCon(sel0[i]))) return bad('A shape to stretch has constraints or dimensions, so it cannot be changed in place. Remove them first. Nothing changed.');
       const outs = chg.map((i) => res[i] as Entity); sketch = sketch.filter((e) => !chg.some((i) => sel0[i] === e)); sketch.push(...outs); selE = outs; $('xdlg').classList.remove('show'); props(); draw(); msg(`Stretched ${outs.length} shape(s).`); return;
     }
-    if (xop === 'prect') { const v = ['xa', 'xb', 'xc', 'xd', 'xe', 'xf2'].map(xf); const n1 = Math.round(v[0]), n2 = Math.round(v[3]); if (!v.every(Number.isFinite) || !(n1 >= 1 && n2 >= 1 && n1 * n2 >= 2 && n1 * n2 <= 201)) return bad('Enter numbers; the total number of copies must be between 1 and 200.'); keepOrig = true; for (let i = 0; i < n1; i++) for (let j = 0; j < n2; j++) { if (!i && !j) continue; const dx = i * v[1] + j * v[4], dy = i * v[2] + j * v[5]; out.push(...sel0.map((e) => transformEntity(e, moveTf(dx, dy)))); } }
-    else if (xop === 'pcirc') { const n = Math.round(xf('xa')), ang = xf('xb'), cx = xf('xc'), cy = xf('xd'); if (![ang, cx, cy].every(Number.isFinite) || !(n >= 2 && n <= 201) || ang === 0) return bad('Enter numbers; count 2 to 201 and an angle other than 0.'); keepOrig = true; const step = Math.abs(ang) >= 360 ? ang / n : ang / (n - 1); for (let k = 1; k < n; k++) out.push(...sel0.map((e) => transformEntity(e, rotateTf({ x: cx, y: cy }, step * k)))); }
+    if (xop === 'prect') { const v = ['xa', 'xb', 'xc', 'xd', 'xe', 'xf2'].map(xf); const n1 = Math.round(v[0]), n2 = Math.round(v[3]); if (!v.every(Number.isFinite) || !(n1 >= 1 && n2 >= 1 && n1 * n2 >= 2 && n1 * n2 <= 201)) return bad('Enter numbers; the total number of copies must be between 1 and 200.'); keepOrig = true; for (let i = 0; i < n1; i++) for (let j = 0; j < n2; j++) { if (!i && !j) continue; const dx = i * v[1] + j * v[4], dy = i * v[2] + j * v[5]; const grp = sel0.map((e) => transformEntity(e, moveTf(dx, dy))); out.push(...grp); patGrp.push(grp); patTf.push([dx, dy]); } }
+    else if (xop === 'pcirc') { const n = Math.round(xf('xa')), ang = xf('xb'), cx = xf('xc'), cy = xf('xd'); if (![ang, cx, cy].every(Number.isFinite) || !(n >= 2 && n <= 201) || ang === 0) return bad('Enter numbers; count 2 to 201 and an angle other than 0.'); keepOrig = true; const step = Math.abs(ang) >= 360 ? ang / n : ang / (n - 1); for (let k = 1; k < n; k++) { const grp = sel0.map((e) => transformEntity(e, rotateTf({ x: cx, y: cy }, step * k))); out.push(...grp); patGrp.push(grp); patTf.push([step * k, cx, cy]); } }
     else if (xop === 'move') { const a = xf('xa'), b = xf('xb'); if (![a, b].every(Number.isFinite)) return bad('Enter numbers.'); out = sel0.map((e) => transformEntity(e, moveTf(a, b))); }
     else if (xop === 'copy') { const a = xf('xa'), b = xf('xb'), n = Math.round(xf('xn')); if (![a, b].every(Number.isFinite) || !(n >= 1 && n <= 200)) return bad('Enter numbers (copies 1 to 200).'); keepOrig = true; for (let k = 1; k <= n; k++) out.push(...sel0.map((e) => transformEntity(e, moveTf(a * k, b * k)))); }
     else if (xop === 'rot') { const a = xf('xa'), cx = xf('xb'), cy = xf('xc'); if (![a, cx, cy].every(Number.isFinite)) return bad('Enter numbers.'); keepOrig = (document.getElementById('xkeep') as HTMLInputElement).checked; out = sel0.map((e) => transformEntity(e, rotateTf({ x: cx, y: cy }, a))); }
@@ -733,8 +747,11 @@ function xApply() {
       out = sel0.map((e) => transformEntity(e, mirrorTf(p1, p2)));
     } else { const d = xf('xa'); if (!Number.isFinite(d) || d === 0) return bad('Enter a distance other than 0.'); keepOrig = true; const r = sel0.map((e) => offsetEntity(e, d)); const fail = r.findIndex((x) => !x); if (fail >= 0) return bad(`Offset is not possible for ${sel0[fail].t === 'poly' ? 'a polygon (not supported yet)' : 'this shape at that distance'}. Nothing changed.`); out = r as Entity[]; }
   } catch (er) { return bad((er as Error).message); }
+  if (!keepOrig && sel0.some((e) => patRole(e) === 'copy')) return bad('A selected shape is a copy driven by an associative pattern, so it cannot be moved in place. Edit the source shape, or use Copy. Nothing changed.');
+  const dissolves = !keepOrig && sel0.some((e) => patRole(e) === 'src');
   if (!keepOrig) { const locked = sel0.find(usedByCon); if (locked) return bad('A selected shape has constraints or dimensions, so it cannot be moved in place. Use Copy or Keep the original, or remove them. Nothing changed.'); sketch = sketch.filter((e) => !sel0.includes(e)); }
-  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset', scale: 'Scaled', stretch: 'Stretched', prect: 'Rectangular pattern of', pcirc: 'Circular pattern of' }[xop]} ${sel0.length} shape(s).`);
+  if ((xop === 'prect' || xop === 'pcirc') && (document.getElementById('xassoc') as HTMLInputElement | null)?.checked) { if (sel0.some((e) => usedByCon(e))) return bad('A selected shape has constraints or dimensions. An associative pattern cannot follow a constrained shape yet. Untick Associative or remove them. Nothing changed.'); pats.push({ k: xop, src: sel0, cp: patGrp, tf: patTf }); }
+  sketch.push(...out); selE = out; $('xdlg').classList.remove('show'); props(); draw(); msg(`${{ move: 'Moved', copy: 'Copied', rot: 'Rotated', mir: 'Mirrored', off: 'Offset', scale: 'Scaled', stretch: 'Stretched', prect: 'Rectangular pattern of', pcirc: 'Circular pattern of' }[xop]} ${sel0.length} shape(s).` + (dissolves ? ' The moved shape was a pattern source: that pattern is dissolved and its copies are now plain shapes.' : ''));
 }
 $('xmove').onclick = () => xOpen('move'); $('xcopy').onclick = () => xOpen('copy'); $('xrot').onclick = () => xOpen('rot'); $('xmir').onclick = () => xOpen('mir'); $('xoff').onclick = () => xOpen('off'); const xscEl = document.getElementById('xsc'); if (xscEl) xscEl.onclick = () => xOpen('scale'); const xprEl = document.getElementById('xpr'); if (xprEl) xprEl.onclick = () => xOpen('prect'); const xpcEl = document.getElementById('xpc'); if (xpcEl) xpcEl.onclick = () => xOpen('pcirc'); const xstEl = document.getElementById('xst'); if (xstEl) xstEl.onclick = () => xOpen('stretch');
 $('xdel').onclick = deleteSel; $('xundo').onclick = undoSk; $('xredo').onclick = redoSk; $('xok').onclick = xApply; $('xcancel').onclick = () => $('xdlg').classList.remove('show');
@@ -748,15 +765,15 @@ addEventListener('keydown', (e) => {
 
 // ---------- actions ----------
 function snapshotSrc(): SketchSrc | null {
-  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || isPt(e) || e.cn) && !cons.length && !dims.length) return null;
-  const ix = (o: unknown) => sketch.indexOf(o as Entity);
-  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })) };
+  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || isPt(e) || e.cn) && !cons.length && !dims.length && !pats.length) return null;
+  refreshPats(); const ix = (o: unknown) => sketch.indexOf(o as Entity);
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
 }
 function restoreSrc(s: SketchSrc) {
-  sketch = clone(s.ents); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos }));
+  sketch = clone(s.ents); pats = (s.pats ?? []).map((p: SketchPat) => ({ k: p.k, src: p.src.map((i) => sketch[i]), cp: p.cp.map((g) => g.map((i) => (i >= 0 ? sketch[i] : undefined))), tf: p.tf.map((r) => [...r]) })).filter((p) => p.src.every(Boolean)); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos }));
   cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.n !== undefined ? { n: sketch[c.n] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
 }
-function startSketch(from?: Entity[], src?: SketchSrc | null) { selE = []; hist = []; redoS = []; cons = []; dims = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
+function startSketch(from?: Entity[], src?: SketchSrc | null) { pats = []; selE = []; hist = []; redoS = []; cons = []; dims = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
   if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
@@ -769,7 +786,7 @@ $('ppx').onclick = () => $('pp').classList.remove('show');
 function editFeature(i: number) { if (isMod(features[i].kind)) { editMod(i); return; } editing = i; sel = i; curPlane = features[i].plane ?? 'XY'; curOrient = features[i].orient ?? {}; startSketch(features[i].sketch, features[i].src); msg(`Editing Sketch${i + 1}: change dimensions, then Finish Sketch.`); }
 $('editft').onclick = () => sel !== null && editFeature(sel);
 $('cancelsk').onclick = () => { if (editing === null && sketch.length) { pending = null; pendingSrc = null; } editing = null; sketch = []; setMode('model'); msg('Sketch cancelled.'); };
-$('clear').onclick = () => { cons = []; sketch = []; polyPts = []; draw(); props(); };
+$('clear').onclick = () => { pats = []; cons = []; sketch = []; polyPts = []; draw(); props(); };
 $('fin2').onclick = () => $('finish').click();
 $('finish').onclick = () => {
   if (!sketch.length) { editing = null; setMode('model'); msg('Empty sketch discarded.'); return; }
