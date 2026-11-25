@@ -8,7 +8,7 @@ import { LINE_KINDS } from './solver-core';
 import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
-import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius, arcConstraintNote } from './sketch-ops';
+import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius, arcConstraintNote, pointEndStep } from './sketch-ops';
 import { filletLineArc } from './fillet-arc';
 import { nearestOnArc, SketchPat, SketchSrc, Entity, Feature, P, filletCorner, chamferCorner, chamferDistAngle, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, arcTangentFrom, splineSample } from './geometry';
 
@@ -82,9 +82,17 @@ function refreshDof() { refreshCircDof(); const ls = sketch.filter((e) => e.t ==
   (lc.length ? dofLineMarks(ls, lc) : Promise.resolve(ls.map(() => false))).then((mk) => { if (n !== dofSeq) return; const nm = new Set<L>(); ls.forEach((l, i) => { if (mk[i]) nm.add(l); }); const same = nm.size === dofFixed.size && [...nm].every((x) => dofFixed.has(x)); if (!same) { dofFixed = nm; draw(); } }, () => undefined);
   dofSketch(ls, lc).then((d) => d >= 0 ? d : null, () => null).then((d) => { if (n !== dofSeq) return; if (d !== dofVal) { dofVal = d; draw(); } }); }
 /** Persistent Point-on-end relation (kind 'pcoin'): the Point marker follows the chosen end point of a line, re-applied after every solve. */
+const pcoinLast = new WeakMap<object, { pt: P; end: P }>(); let pcoinDriven = false; let pcoinBusy = false;
 function applyPointRels() {
+  pcoinDriven = false; applyPointRels0();
+  if (pcoinDriven && !pcoinBusy) { pcoinBusy = true; pcoinDriven = false; solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).catch((er) => msg((er as Error).message)).finally(() => { pcoinBusy = false; props(); draw(); }); }
+}
+function applyPointRels0() {
   for (const c of cons) { const k = c.k as string; if (!PT_KINDS.includes(k)) continue; const pe = c.l as unknown as PointE, tg = c.m as unknown as Entity; if (!sketch.includes(pe as unknown as Entity) || !sketch.includes(tg)) continue;
-    if (k === 'pcoin') { const ln = tg as unknown as { a: P; b: P }; const q = (c.v ?? 0) ? ln.b : ln.a; pe.p = { x: q.x, y: q.y }; }
+    if (k === 'pcoin') {
+      const ln = tg as unknown as { a: P; b: P }; const isB = (c.v ?? 0) ? true : false; const q = isB ? ln.b : ln.a; const last = pcoinLast.get(c);
+      if (pointEndStep(last, pe.p, q, dims.some((d) => d.e === (tg as Entity))) === 'drive') { const np = { x: pe.p.x, y: pe.p.y }; if (isB) ln.b = np; else ln.a = np; pcoinDriven = true; }
+      const q2 = isB ? ln.b : ln.a; pe.p = { x: q2.x, y: q2.y }; pcoinLast.set(c, { pt: { ...pe.p }, end: { x: q2.x, y: q2.y } }); }
     else if (k === 'pcol') { const ln = tg as unknown as { a: P; b: P }; const dx = ln.b.x - ln.a.x, dy = ln.b.y - ln.a.y, L2 = dx * dx + dy * dy; if (L2 > 1e-12) { const u = ((pe.p.x - ln.a.x) * dx + (pe.p.y - ln.a.y) * dy) / L2; pe.p = { x: ln.a.x + u * dx, y: ln.a.y + u * dy }; } }
     else if (k === 'pcoa') { const ar = tg as unknown as { a: P; b: P; m: P }; const q = nearestOnArc(pe.p, ar.a, ar.b, ar.m); if (q) pe.p = q; }
     else { const ci = tg as unknown as { c: P; r: number }; const dx = pe.p.x - ci.c.x, dy = pe.p.y - ci.c.y, d = Math.hypot(dx, dy); if (d > 1e-9) pe.p = { x: ci.c.x + dx / d * ci.r, y: ci.c.y + dy / d * ci.r }; } } }
