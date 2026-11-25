@@ -545,7 +545,9 @@ const commitFillet = () => {
       const g = filletLineArc(P0, lf, arcE, r);
       if (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6) l.a = { ...g.lineEnd }; else l.b = { ...g.lineEnd };
       arcE.a = { ...g.arc.a }; arcE.b = { ...g.arc.b }; arcE.m = { ...g.arc.m };
-      sketch.push({ t: 'arc', ...g.fillet }); filR = r; msg(`Fillet R${+r.toFixed(3)} mm added between a line and an arc.`); props();
+      sketch.push({ t: 'arc', ...g.fillet }); { // stored relation: the fillet arc end sits on the trimmed line end (so Dimension keeps them joined without position guessing)
+        const fa = sketch[sketch.length - 1] as Extract<Entity, { t: 'arc' }>; const lineB = Math.hypot(l.b.x - g.lineEnd.x, l.b.y - g.lineEnd.y) < 1e-9; const fe = Math.hypot(fa.b.x - g.lineEnd.x, fa.b.y - g.lineEnd.y) < Math.hypot(fa.a.x - g.lineEnd.x, fa.a.y - g.lineEnd.y) ? 1 : 0;
+        cons.push({ k: 'aend', l: fa as unknown as L, m: l as unknown as L, v: (fe << 1) | (lineB ? 1 : 0) } as Con); } filR = r; msg(`Fillet R${+r.toFixed(3)} mm added between a line and an arc.`); props();
       filPt = null; $('dimbox').style.display = 'none'; draw(); return;
     }
     const far = (l: Extrude_L) => (Math.hypot(l.a.x - P0.x, l.a.y - P0.y) < 1e-6 ? l.b : l.a);
