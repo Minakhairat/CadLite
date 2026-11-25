@@ -20,7 +20,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
 let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'slotca' | 'slot3a' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'sch1' | 'sch2' | 'sch3' | 'cline' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
-let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
+let conEnd: { l: Extract<Entity, { t: 'line' | 'arc' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
 let filPt: P | null = null; let filR = 2; let chmPt: P | null = null; let chmStage = 0; let chmV1 = 0;
@@ -60,6 +60,15 @@ const grid = () => (cam.s > 12 ? 1 : cam.s > 4 ? 5 : 10);
 const toWorld = (px: number, py: number): P => ({ x: (px - sk.width / 2) / cam.s + cam.x, y: -(py - sk.height / 2) / cam.s + cam.y });
 const toScreen = (p: P) => ({ x: (p.x - cam.x) * cam.s + sk.width / 2, y: -(p.y - cam.y) * cam.s + sk.height / 2 });
 /** Solve line constraints, then circle constraints (lines stay fixed). Nothing is written when either solve fails. */
+/** Arc end on line end (one way): the arc end point is moved onto the line end point, the arc's middle point stays, so the arc is redrawn through the new end. Refused when that leaves no valid arc. */
+function applyArcEnds() {
+  for (const c of cons) { if ((c.k as string) !== 'aend') continue; const arc = c.l as unknown as Entity, ln = c.m as unknown as Entity; if (!sketch.includes(arc) || !sketch.includes(ln) || arc.t !== 'arc' || ln.t !== 'line') continue;
+    const v = c.v ?? 0, q = (v & 1) ? ln.b : ln.a; const o = (v >> 1 & 1) ? arc.b : arc.a;
+    if (Math.hypot(o.x - q.x, o.y - q.y) < 1e-9) continue;
+    const np = { x: q.x, y: q.y }; const t = (v >> 1 & 1) ? { a: arc.a, b: np, m: arc.m } : { a: np, b: arc.b, m: arc.m };
+    if (!circle3(t.a, t.b, t.m) || Math.hypot(t.a.x - t.b.x, t.a.y - t.b.y) < 1e-9) throw new Error('The arc cannot reach that line end point while keeping its middle point (the three points would not make an arc). Nothing was kept.');
+    if ((v >> 1 & 1)) arc.b = np; else arc.a = np; }
+}
 /** Persistent arc Concentric / Equal radius: re-applied after every solve and after a reference size edit. Throws when a reference has no usable centre. */
 function applyArcRels() {
   for (const c of cons) { const k = c.k as string; if (k !== 'aconc' && k !== 'aeqr') continue; const arc = c.l as unknown as Entity, ref = c.m as unknown as Entity; if (!sketch.includes(arc) || !sketch.includes(ref) || arc.t !== 'arc') continue;
@@ -100,9 +109,10 @@ const PT_KINDS = ['pcoin', 'pcol', 'pcoc', 'pcoa'];
 async function solveAll(lines: L[], all: Con[]): Promise<void> { await solveAll0(lines, all); applyArcRels(); applyPointRels(); }
 async function solveAll0(lines: L[], all: Con[]): Promise<void> {
   await solveSketch(lines, all.filter((c) => LINE_KINDS.includes(c.k)));
+  applyArcEnds();
   const ac = all.filter((c) => (c.k as string) === 'tanla');
   if (ac.length) { const arcs = sketch.filter((e) => e.t === 'arc') as unknown as { a: P; b: P; m: P }[]; solveArcs((await getW()) as never, lines, arcs, ac.map((c) => ({ k: 'tanla' as const, arc: c.l as never, l: c.m as never })) as never); }
-  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr' && !PT_KINDS.includes(c.k as string)); if (!cc.length) return;
+  const cc = all.filter((c) => !LINE_KINDS.includes(c.k) && (c.k as string) !== 'tanla' && (c.k as string) !== 'aconc' && (c.k as string) !== 'aeqr' && (c.k as string) !== 'aend' && !PT_KINDS.includes(c.k as string)); if (!cc.length) return;
   const circles = sketch.filter((e) => e.t === 'circle') as unknown as { c: P; r: number }[];
   await solveCircleSketch(lines, circles, cc.map((c) => ({ k: c.k as 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad', ...(c.v !== undefined ? { v: c.v } : {}), c: (c.k === 'tanlc' ? c.l : c.l) as never, ...(c.k === 'tanlc' ? { l: c.m } : c.m ? { d: c.m as never } : {}) })) as never);
 }
@@ -187,7 +197,7 @@ function draw() {
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
   dims = dims.filter((d) => sketch.includes(d.e)); cons = cons.filter((c) => sketch.includes(c.l as Entity) && (!c.m || sketch.includes(c.m as Entity)) && (!c.n || sketch.includes(c.n as Entity)));
-  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (PT_KINDS.includes(c.k as string)) { const s = toScreen((c.l as unknown as PointE).p); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(s.x, s.y, 7 * dpr, 0, 7); ctx.stroke(); continue; } if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
+  for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (PT_KINDS.includes(c.k as string)) { const s = toScreen((c.l as unknown as PointE).p); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(s.x, s.y, 7 * dpr, 0, 7); ctx.stroke(); continue; } if ((c.k as string) === 'aend') { const v = c.v ?? 0; const ar = c.l as unknown as { a: P; b: P }, ln = c.m as unknown as { a: P; b: P }; ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const q of [(v >> 1 & 1) ? ar.b : ar.a, (v & 1) ? ln.b : ln.a]) { const s2 = toScreen(q); ctx.beginPath(); ctx.arc(s2.x, s2.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
   if (hoverSnap && tool !== 'none' && tool !== 'select' && tool !== 'trim' && tool !== 'extend' && tool !== 'split') { const hs = toScreen(hoverSnap); ctx.save(); ctx.setLineDash([]); ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2 * dpr; ctx.strokeRect(hs.x - 7 * dpr, hs.y - 7 * dpr, 14 * dpr, 14 * dpr); ctx.restore(); }
@@ -259,11 +269,19 @@ sk.addEventListener('pointerdown', (e) => {
     return;
   }
   if (tool === 'ccoin') {
-    let bd = (14 * devicePixelRatio) / cam.s, best: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null;
-    for (const en of sketch) if (en.t === 'line') for (const e2 of [0, 1]) { const q = e2 ? en.b : en.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd && !(conEnd && conEnd.l === en)) { bd = d; best = { l: en, e: e2 }; } }
-    if (!best) { msg('Coincident: click near a line end point.'); return; }
+    let bd = (14 * devicePixelRatio) / cam.s, best: { l: Extract<Entity, { t: 'line' | 'arc' }>; e: number } | null = null;
+    for (const en of sketch) if (en.t === 'line' || en.t === 'arc') for (const e2 of [0, 1]) { const q = e2 ? en.b : en.a; const d = Math.hypot(q.x - pr.x, q.y - pr.y); if (d < bd && !(conEnd && conEnd.l === en)) { bd = d; best = { l: en, e: e2 }; } }
+    if (!best) { msg('Coincident: click near a line or arc end point.'); return; }
     if (!conEnd) { conEnd = best; msg('Now click the end point to join it to.'); return; }
-    const c: Con = { k: 'coin', l: conEnd.l, m: best.l, v: (conEnd.e << 1) | best.e }; conEnd = null; cons.push(c); msg('Solving...');
+    const f = conEnd; conEnd = null;
+    if (f.l.t === 'arc' && best.l.t === 'arc') { msg('Coincident between two arc end points is not built yet.'); return; }
+    if (f.l.t === 'arc' || best.l.t === 'arc') {
+      const ar = (f.l.t === 'arc' ? f : best) as { l: Extract<Entity, { t: 'arc' }>; e: number }, lr = (f.l.t === 'arc' ? best : f) as { l: Extract<Entity, { t: 'line' }>; e: number };
+      if (cons.some((x) => (x.k as string) === 'aend' && (x.l as unknown) === ar.l && ((x.v ?? 0) >> 1 & 1) === ar.e)) { msg('That arc end point is already attached to a line end.'); return; }
+      const c: Con = { k: 'aend', l: ar.l as unknown as L, m: lr.l as unknown as L, v: (ar.e << 1) | lr.e }; const old = { a: ar.l.a, b: ar.l.b }; cons.push(c); msg('Solving...');
+      solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Arc end on line end: the arc end follows that line end (one way: the line end drives the arc end). Moving the arc end does not move the line.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); ar.l.a = old.a; ar.l.b = old.b; msg((er as Error).message); draw(); });
+      return; }
+    const c: Con = { k: 'coin', l: f.l as Extract<Entity, { t: 'line' }>, m: best.l, v: (f.e << 1) | best.e }; cons.push(c); msg('Solving...');
     solveAll(sketch.filter((x) => x.t === 'line') as L[], cons).then(() => { msg('Coincident applied.'); props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== c); msg((er as Error).message); draw(); });
     return;
   }
