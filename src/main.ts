@@ -7,7 +7,7 @@ import { solveArcs } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius } from './sketch-ops';
-import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, splineSample } from './geometry';
+import { SketchSrc, Entity, Feature, P, filletCorner, trimLine, extendLine, splitLine, buildGeometry, snap, outline, toSTL, volume, resolveLoops, circle3, incircleOfLines, splineSample } from './geometry';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const msg = (t: string) => ($('msg').textContent = t);
@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -332,6 +332,15 @@ sk.addEventListener('pointerdown', (e) => {
     if (segPts.length === 3) { const [a, b, mm] = segPts; if (circle3(a, b, mm)) { sketch.push({ t: 'arc', a, b, m: mm }); props(); } else msg('Arc points are on one line: pick a point off the line.'); segPts = []; }
     hover = p; draw(); return;
   }
+  if (tool === 'ctan3') {
+    let bi = -1, bd = (10 * devicePixelRatio) / cam.s; sketch.forEach((e, i) => { if (e.t === 'line' && !ctan3Pick.includes(i)) { const d = dseg(pr, e.a, e.b); if (d < bd) { bd = d; bi = i; } } });
+    if (bi < 0) { msg(`Circle tangent: click line ${ctan3Pick.length + 1} of 3 (a different line).`); return; }
+    ctan3Pick.push(bi);
+    if (ctan3Pick.length < 3) { msg(`Circle tangent: line ${ctan3Pick.length} picked. Click line ${ctan3Pick.length + 1} of 3.`); draw(); return; }
+    const [l1, l2, l3] = ctan3Pick.map((i) => sketch[i] as Extract<Entity, { t: 'line' }>); ctan3Pick = [];
+    const cc = incircleOfLines(l1, l2, l3); if (!cc) { msg('Circle tangent: two of the lines are parallel or the three meet at one point. Pick three lines that make a triangle.'); draw(); return; }
+    sketch.push({ t: 'circle', c: cc.c, r: cc.r }); props(); draw(); msg(`Circle added: tangent to the three lines, centre (${+cc.c.x.toFixed(3)}, ${+cc.c.y.toFixed(3)}), radius ${+cc.r.toFixed(3)} mm. Not linked to the lines: it does not follow if they move.`); return;
+  }
   if (tool === 'circ3') {
     segPts.push(p);
     if (segPts.length === 3) { const [a, b, c3] = segPts; segPts = []; const cc = circle3(a, b, c3); if (cc) { sketch.push({ t: 'circle', c: cc.c, r: cc.r }); props(); msg(`Circle added: centre (${+cc.c.x.toFixed(3)}, ${+cc.c.y.toFixed(3)}), radius ${+cc.r.toFixed(3)} mm.`); } else msg('Circle: the three points are on one line. Pick points off the line.'); }
@@ -413,6 +422,7 @@ const commitFillet = () => {
   filPt = null; $('dimbox').style.display = 'none'; draw();
 };
 type Extrude_L = Extract<Entity, { t: 'line' }>;
+let ctan3Pick: number[] = [];
 let regPts: { c: P; v: P; circ?: boolean } | null = null; let regN = 6;
 const commitRegular = () => {
   const q = regPts!; const n = Math.round(parseFloat($<HTMLInputElement>('dimin').value));
@@ -793,7 +803,7 @@ $('addnum').onclick = () => {
   else { msg('Pick Rectangle (W, H) or Circle (R) and enter positive values in mm'); return; }
   draw(); props();
 };
-document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-tool]').forEach((b) => (b.onclick = () => { tool = b.dataset.tool as typeof tool; filPt = null; regPts = null; conPick = null; symPick = []; ptPick = null; cirPick = null; polyPts = []; segPts = []; ctan3Pick = []; dimTarget = null; $('dimbox').style.display = 'none'; refreshButtons(); draw(); }));
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 $('bt').onclick = () => $('browser').classList.toggle('open');
 
