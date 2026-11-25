@@ -221,3 +221,16 @@ export function splitLine(l: { a: P; b: P }, click: P): [{ a: P; b: P }, { a: P;
   const t = ((click.x - l.a.x) * dx + (click.y - l.a.y) * dy) / L2; if (t * Math.sqrt(L2) < 1e-6 || (1 - t) * Math.sqrt(L2) < 1e-6) return null;
   const p = { x: l.a.x + dx * t, y: l.a.y + dy * t }; return [{ a: l.a, b: p }, { a: p, b: l.b }];
 }
+
+/** Closed Catmull-Rom spline through fit points as cubic Bezier spans. The sketch, selection and solid kernel all use these same spans. */
+export type Bez = { a: P; c1: P; c2: P; b: P };
+export function splineBeziers(fit: P[]): Bez[] {
+  const n = fit.length; const out: Bez[] = [];
+  for (let i = 0; i < n; i++) { const p0 = fit[(i + n - 1) % n], p1 = fit[i], p2 = fit[(i + 1) % n], p3 = fit[(i + 2) % n]; out.push({ a: p1, c1: { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 }, c2: { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 }, b: p2 }); }
+  return out;
+}
+export function splineSample(fit: P[], per = 24): P[] {
+  const out: P[] = [];
+  for (const s of splineBeziers(fit)) for (let k = 0; k < per; k++) { const t = k / per, u = 1 - t, w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t; out.push({ x: w0 * s.a.x + w1 * s.c1.x + w2 * s.c2.x + w3 * s.b.x, y: w0 * s.a.y + w1 * s.c1.y + w2 * s.c2.y + w3 * s.b.y }); }
+  return out;
+}
