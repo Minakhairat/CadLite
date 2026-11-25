@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'slotca' | 'slot3a' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'sch1' | 'sch2' | 'sch3' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'slotov' | 'slotcp' | 'slotca' | 'slot3a' | 'ellipse' | 'rpoly' | 'cpoly' | 'circ3' | 'ctan3' | 'arct' | 'arcc' | 'rectc' | 'rect3' | 'rect3c' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'sch1' | 'sch2' | 'sch3' | 'cline' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -171,7 +171,7 @@ function draw() {
   for (const e of sketch) if (e.t === 'line' && dofFixed.has(e as L)) { const q = toScreen({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }); ctx.fillStyle = '#1a7f37'; ctx.fillRect(q.x - 4 * dpr, q.y - 4 * dpr, 8 * dpr, 8 * dpr); }
   if (winA && winB) { const a = toScreen(winA), b = toScreen(winB); const cross = winB.x < winA.x; ctx.save(); ctx.setLineDash(cross ? [6 * dpr, 4 * dpr] : []); ctx.strokeStyle = cross ? '#2a8a3a' : '#1f6fd1'; ctx.fillStyle = cross ? 'rgba(42,138,58,0.10)' : 'rgba(31,111,209,0.10)'; ctx.lineWidth = 1.2 * dpr; ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(a.x - b.x), Math.abs(a.y - b.y)); ctx.restore(); }
   if (segPts.length && hover) {
-    ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = tool === 'line' ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
+    ctx.setLineDash([6 * dpr, 4 * dpr]); const pv: Entity | null = (tool === 'line' || tool === 'cline') ? { t: 'line', a: segPts[0], b: hover } : tool === 'arc' ? (segPts.length === 1 ? { t: 'line', a: segPts[0], b: hover } : { t: 'arc', a: segPts[0], b: segPts[1], m: hover }) : null;
     if (pv) { path(outline(pv), false); ctx.stroke(); } ctx.setLineDash([]); ctx.fillStyle = '#1f6fd1'; segPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); });
   }
   if (polyPts.length) { path(polyPts, false); ctx.stroke(); ctx.fillStyle = '#1f6fd1'; polyPts.forEach((p) => { const s = toScreen(p); ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }); }
@@ -336,8 +336,8 @@ sk.addEventListener('pointerdown', (e) => {
     const inp = $<HTMLInputElement>('dimin'); inp.value = String(+dimValue(h.e, h.w).toFixed(3)); setTimeout(() => { inp.focus(); inp.select(); }, 0); return;
   }
   if (tool === 'point') { sketch.push({ t: 'point', p: { x: p.x, y: p.y } } as unknown as Entity); ck(); props(); draw(); msg(`Point at X ${p.x} Y ${p.y} mm. It is a marker only and is not part of the profile.`); return; }
-  if (tool === 'line') {
-    if (!segPts.length) segPts = [p]; else if (Math.hypot(p.x - segPts[0].x, p.y - segPts[0].y) > 1e-9) { sketch.push({ t: 'line', a: segPts[0], b: p }); segPts = [p]; props(); }
+  if (tool === 'line' || tool === 'cline') {
+    if (!segPts.length) segPts = [p]; else if (Math.hypot(p.x - segPts[0].x, p.y - segPts[0].y) > 1e-9) { sketch.push(tool === 'cline' ? { t: 'line', a: segPts[0], b: p, cn: true } : { t: 'line', a: segPts[0], b: p }); segPts = [p]; props(); }
     hover = p; draw(); return;
   }
   if (tool === 'arc') {
