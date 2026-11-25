@@ -1,4 +1,4 @@
-import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity, stretchEntity, arcConcentric, arcEqualRadius } from './sketch-ops';
+import { moveTf, rotateTf, mirrorTf, transformEntity, offsetEntity, scaleEntity, stretchEntity, arcConcentric, arcEqualRadius, arcConstraintNote } from './sketch-ops';
 import { circle3, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (!(Math.abs(a - b) <= tol)) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(4)); };
 const line: Entity = { t: 'line', a: { x: 1, y: 2 }, b: { x: 4, y: 6 } };
@@ -47,3 +47,9 @@ q = scaleEntity(el, { x: 0, y: 0 }, 2) as any; near(q.ell.a, 10, 1e-9, 'ellipse 
 let thrown = false; try { transformEntity(el, (p) => ({ x: p.x * 2, y: p.y })); } catch { thrown = true; } if (!thrown) { console.error('FAIL non-uniform transform must not silently distort an ellipse'); process.exit(1); } console.log('ok non-similar transform of an ellipse is refused');
 if (stretchEntity(el, { x0: 22, y0: 0, x1: 30, y1: 20 }, 3, 0) !== null) { console.error('FAIL partial stretch of an ellipse should be refused'); process.exit(1); } console.log('ok partial stretch of an ellipse is refused');
 near((stretchEntity(el, { x0: 0, y0: 0, x1: 50, y1: 50 }, 3, 1) as any).ell.c.x, 23, 1e-9, 'stretch window around the whole ellipse moves it');
+{
+  const n0 = arcConstraintNote([]); const n1 = arcConstraintNote(['tanla', 'aeqr', 'xyz']);
+  if (!n0.includes('No arc constraint') || !n0.includes('not counted')) { console.error('FAIL arc note empty', n0); process.exit(1); }
+  if (!n1.includes('tangent to a line') || !n1.includes('equal radius') || n1.includes('concentric') || !n1.includes('NOT constrained')) { console.error('FAIL arc note kinds', n1); process.exit(1); }
+  console.log('ok arc constraint notes');
+}
