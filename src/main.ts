@@ -1,3 +1,4 @@
+import { Param, evalExpr, resolveParams, validName } from './expr';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
@@ -21,8 +22,8 @@ let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let 
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
 let filPt: P | null = null; let filR = 2; let chmPt: P | null = null; let chmStage = 0; let chmV1 = 0;
-type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P };
-let dims: Dim[] = [];
+type Dim = { e: Entity; w: 'len' | 'dia' | 'rad' | 'w' | 'h'; pos: P; x?: string };
+let dims: Dim[] = []; let params: Param[] = [];
 let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
 let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
@@ -147,7 +148,7 @@ function dimApply(e: Entity, w: Dim['w'], v: number) {
     const dx = e.m.x - c2.x, dy = e.m.y - c2.y, dl = Math.hypot(dx, dy) || 1; e.m = { x: c2.x + (dx / dl) * v, y: c2.y + (dy / dl) * v };
   }
 }
-const dimText = (d: Dim) => { const v = dimValue(d.e, d.w); return (d.w === 'dia' ? '\u00D8' : d.w === 'rad' ? 'R' : '') + (+v.toFixed(3)); };
+const dimText = (d: Dim) => { const v = dimValue(d.e, d.w); return (d.w === 'dia' ? '\u00D8' : d.w === 'rad' ? 'R' : '') + (+v.toFixed(3)) + (d.x ? ' = ' + d.x : ''); };
 function draw() {
   refreshPats();
   if (mode !== 'sketch') return;
@@ -528,13 +529,49 @@ const commitChamfer = () => {
   } catch (er) { msg((er as Error).message); return; }
   chmPt = null; chmStage = 0; $('dimbox').style.display = 'none'; draw();
 };
+
+/** Re-evaluate every dimension that keeps an expression and apply it. All or nothing: on any failure the sketch is restored. */
+function reapplyExprDims(): void {
+  const vals = resolveParams(params); const before = JSON.stringify(snapshotSrc());
+  try {
+    for (const d of dims) { if (!d.x || !sketch.includes(d.e)) continue; const v = evalExpr(d.x, vals); dimApply(d.e, d.w, v);
+      if (d.e.t === 'line') { const ln = d.e as unknown as L; const lc = cons.find((c) => c.k === 'len' && c.l === ln); if (lc) lc.v = v; } }
+    applyArcRels(); applyPointRels();
+    for (const d of dims) { if (!d.x || !sketch.includes(d.e)) continue; const want = evalExpr(d.x, vals), got = dimValue(d.e, d.w); if (Math.abs(got - want) > 1e-6 * Math.max(1, want)) throw new Error(`The dimension ${d.x} cannot be kept: dimensions that share end points disturb each other here (wanted ${+want.toFixed(4)}, got ${+got.toFixed(4)}).`); }
+  } catch (er) { restoreSrc(JSON.parse(before)); throw er; }
+  solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => msg((er as Error).message));
+}
+const prmBox = document.createElement('div'); prmBox.id = 'prmbox'; prmBox.style.cssText = 'display:none;position:absolute;top:8px;right:8px;z-index:20;background:#fff;border:1px solid #34506f;border-radius:4px;padding:8px;font:12px sans-serif;max-width:360px;box-shadow:0 2px 8px #0003';
+$('gfx').append(prmBox);
+function refreshPrm() {
+  prmBox.innerHTML = ''; const h = document.createElement('div'); h.textContent = 'Parameters (this sketch only, mm). Use a name in a dimension, e.g. w*2'; h.style.marginBottom = '6px'; prmBox.append(h);
+  let vals: Record<string, number> = {}; let bad = ''; try { vals = resolveParams(params); } catch (er) { bad = (er as Error).message; }
+  params.forEach((q, i) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:4px;margin:2px 0;align-items:center';
+    const mk = (v: string, w: string, f: (t: string) => void) => { const inp = document.createElement('input'); inp.value = v; inp.style.width = w; inp.onchange = () => f(inp.value); return inp; };
+    const val = document.createElement('span'); val.style.cssText = 'min-width:60px'; val.textContent = q.name in vals ? '= ' + +vals[q.name].toFixed(4) : '?';
+    const del = document.createElement('button'); del.textContent = '\u2715'; del.title = 'Delete parameter'; del.onclick = () => changeParams(params.filter((_, j) => j !== i), `Parameter ${q.name} deleted.`);
+    r.append(mk(q.name, '70px', (t) => changeParams(params.map((x, j) => (j === i ? { ...x, name: t.trim() } : x)), 'Name changed.')), mk(q.expr, '110px', (t) => changeParams(params.map((x, j) => (j === i ? { ...x, expr: t } : x)), 'Parameter updated.')), val, del); prmBox.append(r); });
+  if (bad) { const e = document.createElement('div'); e.textContent = bad; e.style.color = '#b00020'; prmBox.append(e); }
+  const add = document.createElement('button'); add.textContent = 'Add parameter'; add.onclick = () => { let n = 1; while (params.some((q) => q.name === 'p' + n)) n++; changeParams([...params, { name: 'p' + n, expr: '10' }], `Parameter p${n} added (10).`); }; prmBox.append(add);
+}
+/** Try a new parameter list: it must resolve and every expression dimension must still apply. Otherwise nothing changes. */
+function changeParams(next: Param[], okMsg: string) {
+  const old = params; params = next;
+  try {
+    resolveParams(params); for (const d of dims) if (d.x) { const used = d.x; evalExpr(used, resolveParams(params)); }
+    reapplyExprDims(); ck(); msg(okMsg);
+  } catch (er) { params = old; msg('Parameter change refused: ' + (er as Error).message + ' Nothing changed.'); }
+  refreshPrm(); draw();
+}
 const commitDim = () => {
   if (chmPt) { commitChamfer(); return; }
   if (regPts) { commitRegular(); return; }
   if (filPt) { commitFillet(); return; }
   if (!dimTarget) return; const inp = $<HTMLInputElement>('dimin'); const t = dimTarget;
-  try { dimApply(t.e, t.w, parseFloat(inp.value)); try { applyArcRels(); applyPointRels(); } catch (er2) { msg((er2 as Error).message); }
-    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: parseFloat(inp.value) }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } if (!dims.some((d) => d.e === t.e && d.w === t.w)) dims.push({ e: t.e, w: t.w, pos: t.pos }); msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
+  let val: number; try { val = evalExpr(inp.value, resolveParams(params)); } catch (er0) { msg((er0 as Error).message); return; }
+  const xt = /^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/.test(inp.value) ? undefined : inp.value.trim();
+  try { dimApply(t.e, t.w, val); try { applyArcRels(); applyPointRels(); } catch (er2) { msg((er2 as Error).message); }
+    if (t.e.t === 'line' && cons.some((c) => c.k !== 'len')) { const ln = t.e; cons = cons.filter((c) => !(c.k === 'len' && c.l === ln)); const lc: Con = { k: 'len', l: ln, v: val }; cons.push(lc); solveAll(sketch.filter((e) => e.t === 'line') as L[], cons).then(() => { props(); draw(); }).catch((er) => { cons = cons.filter((x) => x !== lc); msg((er as Error).message); }); } { const ex = dims.find((d) => d.e === t.e && d.w === t.w); if (!ex) dims.push({ e: t.e, w: t.w, pos: t.pos, ...(xt ? { x: xt } : {}) }); else if (xt) ex.x = xt; else delete ex.x; } msg(`Dimension set: ${dimText({ e: t.e, w: t.w, pos: t.pos })} mm`); props(); }
   catch (er) { msg((er as Error).message); return; }
   dimTarget = null; $('dimbox').style.display = 'none'; draw();
 };
@@ -695,14 +732,14 @@ function refreshPats() {
 }
 function fullSnap(): SketchSrc {
   refreshPats(); const ix = (o: unknown) => sketch.indexOf(o as Entity);
-  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos }, ...(d.x ? { x: d.x } : {}) })), ...(params.length ? { prm: params.map((q) => ({ ...q })) } : {}), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
 }
 function ck() {
   if (restoring || mode !== 'sketch') return;
   const s = JSON.stringify(fullSnap());
   if (s !== hist[hist.length - 1]) { hist.push(s); redoS = []; if (hist.length > 100) hist.shift(); }
 }
-function applySnap(s: string) { restoring = true; try { restoreSrc(JSON.parse(s)); selE = []; } finally { restoring = false; } props(); draw(); }
+function applySnap(s: string) { restoring = true; try { restoreSrc(JSON.parse(s)); selE = []; } finally { restoring = false; } if (prmBox.style.display !== 'none') refreshPrm(); props(); draw(); }
 function undoSk() { if (mode !== 'sketch') return; ck(); if (hist.length < 2) { msg('Nothing to undo.'); return; } redoS.push(hist.pop()!); applySnap(hist[hist.length - 1]); msg('Undone.'); }
 function redoSk() { if (mode !== 'sketch' || !redoS.length) { msg('Nothing to redo.'); return; } const s = redoS.pop()!; hist.push(s); applySnap(s); msg('Redone.'); }
 function distTo(e: Entity, p: P): number {
@@ -792,15 +829,15 @@ addEventListener('keydown', (e) => {
 
 // ---------- actions ----------
 function snapshotSrc(): SketchSrc | null {
-  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || isPt(e) || e.cn) && !cons.length && !dims.length && !pats.length) return null;
+  if (!sketch.some((e) => e.t === 'line' || e.t === 'arc' || isPt(e) || e.cn) && !cons.length && !dims.length && !pats.length && !params.length) return null;
   refreshPats(); const ix = (o: unknown) => sketch.indexOf(o as Entity);
-  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos } })), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
+  return { ents: clone(sketch), cons: cons.filter((c) => ix(c.l) >= 0 && (!c.m || ix(c.m) >= 0) && (!c.n || ix(c.n) >= 0)).map((c) => ({ k: c.k, l: ix(c.l), ...(c.m ? { m: ix(c.m) } : {}), ...(c.n ? { n: ix(c.n) } : {}), ...(c.v !== undefined ? { v: c.v } : {}) })), dims: dims.filter((d) => ix(d.e) >= 0).map((d) => ({ e: ix(d.e), w: d.w, pos: { ...d.pos }, ...(d.x ? { x: d.x } : {}) })), ...(params.length ? { prm: params.map((q) => ({ ...q })) } : {}), ...(pats.length ? { pats: pats.map((p) => ({ k: p.k, src: p.src.map(ix), cp: p.cp.map((g) => g.map((c) => (c ? ix(c) : -1))), tf: p.tf.map((r) => [...r]) })) } : {}) };
 }
 function restoreSrc(s: SketchSrc) {
-  sketch = clone(s.ents); pats = (s.pats ?? []).map((p: SketchPat) => ({ k: p.k, src: p.src.map((i) => sketch[i]), cp: p.cp.map((g) => g.map((i) => (i >= 0 ? sketch[i] : undefined))), tf: p.tf.map((r) => [...r]) })).filter((p) => p.src.every(Boolean)); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos }));
+  sketch = clone(s.ents); pats = (s.pats ?? []).map((p: SketchPat) => ({ k: p.k, src: p.src.map((i) => sketch[i]), cp: p.cp.map((g) => g.map((i) => (i >= 0 ? sketch[i] : undefined))), tf: p.tf.map((r) => [...r]) })).filter((p) => p.src.every(Boolean)); dims = s.dims.map((d) => ({ e: sketch[d.e], w: d.w as Dim['w'], pos: d.pos, ...(d.x ? { x: d.x } : {}) })); params = (s.prm ?? []).map((q) => ({ ...q }));
   cons = s.cons.map((c) => ({ k: c.k as Con['k'], l: sketch[c.l] as unknown as L, ...(c.m !== undefined ? { m: sketch[c.m] as unknown as L } : {}), ...(c.n !== undefined ? { n: sketch[c.n] as unknown as L } : {}), ...(c.v !== undefined ? { v: c.v } : {}) }));
 }
-function startSketch(from?: Entity[], src?: SketchSrc | null) { pats = []; selE = []; hist = []; redoS = []; cons = []; dims = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
+function startSketch(from?: Entity[], src?: SketchSrc | null) { pats = []; selE = []; hist = []; redoS = []; cons = []; dims = []; params = []; conPick = null; conEnd = null; sketch = from ? clone(from) : pending ? clone(pending) : [];
   if (src) restoreSrc(src); else if (!from && pending && pendingSrc) restoreSrc(pendingSrc);
   if (!from) { /* keep pendingSrc only while the pending sketch stays */ } else pendingSrc = null; if (!from && pending) pending = null; polyPts = []; setMode('sketch'); msg('Sketch: draw shapes or enter exact sizes, then Finish Sketch.'); }
 $('startsk').onclick = () => { editing = null; $('pp').classList.add('show'); };
@@ -820,7 +857,7 @@ $('finish').onclick = () => {
   let src: SketchSrc | null = null;
   try { src = snapshotSrc(); const prof = sketch.filter((e) => !e.cn && !isPt(e)); if (!prof.length) throw new Error('The sketch has only construction shapes or points. Draw at least one normal shape for the profile.'); const rl = resolveLoops(prof); buildGeometry('extrude', rl, 1); sketch = rl; } catch (e) { msg((e as Error).message); return; }
   const kind = editing !== null ? (features[editing].kind as 'extrude' | 'revolve') : null;
-  pending = clone(sketch); pendingSrc = src; cons = []; dims = []; sketch = []; setMode('model');
+  pending = clone(sketch); pendingSrc = src; cons = []; dims = []; params = []; prmBox.style.display = 'none'; sketch = []; setMode('model');
   if (editing !== null && kind) openDlg(kind, features[editing].depth, features[editing].op, features[editing].dir); else msg('Sketch finished. Choose Extrude or Revolve.');
 };
 let dlgOp: 'new' | 'join' | 'cut' | 'intersect' = 'new'; let dlgDir: 'normal' | 'flip' | 'sym' = 'normal';
@@ -1065,3 +1102,5 @@ $('physbtn').onclick = physCard;
   const upd = () => { l.style.display = rb.scrollLeft > 2 ? 'block' : 'none'; r.style.display = rb.scrollLeft + rb.clientWidth < rb.scrollWidth - 2 ? 'block' : 'none'; };
   rb.addEventListener('scroll', upd); addEventListener('resize', upd); document.addEventListener('click', () => setTimeout(upd, 80)); setTimeout(upd, 300); setTimeout(upd, 1500);
 })();
+
+document.getElementById('prmbtn')?.addEventListener('click', () => { if (mode !== 'sketch') { msg('Parameters: start or edit a sketch first.'); return; } prmBox.style.display = prmBox.style.display === 'none' ? 'block' : 'none'; if (prmBox.style.display !== 'none') refreshPrm(); });
