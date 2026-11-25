@@ -1,4 +1,4 @@
-import { arcTangentFrom, incircleOfLines, extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
+import { arcTangentFrom, nearestOnArc, incircleOfLines, extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (Math.abs(a - b) > tol) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(2)); };
 const box: Entity[] = [{ t: 'rect', a: { x: 0, y: 0 }, b: { x: 10, y: 20 } }];
 near(volume(extrude(box, 5)), 1000, 1e-6, 'box extrude volume');
@@ -63,3 +63,7 @@ if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } co
   const cw = arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 40, y: 0 })!; near(cw.c.y, 0, 1e-9, 'clockwise tangent arc centre y'); near(cw.m.x, 30 + 10 * Math.SQRT1_2, 1e-9, 'clockwise mid x'); near(cw.m.y, 10 * Math.SQRT1_2, 1e-9, 'clockwise mid y');
   const big = arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 20, y: 20 })!; near(big.c.x, 30, 1e-9, 'over-180 arc centre x'); near(big.m.x, 30 + 10 * Math.SQRT1_2, 1e-9, 'over-180 arc (270 deg sweep) mid x'); near(big.m.y, 20 + 10 * Math.SQRT1_2, 1e-9, 'over-180 arc mid y');
   if (arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 50, y: 10 }) !== null) { console.error('FAIL end on tangent line must be refused'); process.exit(1); } console.log('ok end point on the tangent line refused'); }
+{ const A = { x: 10, y: 0 }, B = { x: -10, y: 0 }, M = { x: 0, y: 10 }; // upper half circle r10 about origin
+  const q1 = nearestOnArc({ x: 3, y: 20 }, A, B, M)!; if (Math.hypot(q1.x - 3 * 10 / Math.hypot(3, 20), q1.y - 20 * 10 / Math.hypot(3, 20)) > 1e-9) { console.error('nearestOnArc inside span'); process.exit(1); }
+  const q2 = nearestOnArc({ x: 4, y: -20 }, A, B, M)!; if (Math.hypot(q2.x - 10, q2.y) > 1e-9) { console.error('nearestOnArc outside span goes to end a'); process.exit(1); }
+  const q3 = nearestOnArc({ x: -4, y: -20 }, A, B, M)!; if (Math.hypot(q3.x + 10, q3.y) > 1e-9) { console.error('nearestOnArc outside span goes to end b'); process.exit(1); } }
