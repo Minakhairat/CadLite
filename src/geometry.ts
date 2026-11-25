@@ -253,3 +253,14 @@ export function splineSample(fit: P[], per = 24): P[] {
   for (const s of splineBeziers(fit)) for (let k = 0; k < per; k++) { const t = k / per, u = 1 - t, w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t; out.push({ x: w0 * s.a.x + w1 * s.c1.x + w2 * s.c2.x + w3 * s.b.x, y: w0 * s.a.y + w1 * s.c1.y + w2 * s.c2.y + w3 * s.b.y }); }
   return out;
 }
+
+/** Nearest point of a 3-point arc to p: the radial projection onto the arc's circle when that lands inside the swept span, otherwise the nearer end point. */
+export function nearestOnArc(p: P, a: P, b: P, m: P): P | null {
+  const k = circle3(a, b, m); if (!k) return null;
+  const tau = 2 * Math.PI, norm = (x: number) => ((x % tau) + tau) % tau, ang = (q: P) => Math.atan2(q.y - k.c.y, q.x - k.c.x);
+  const a0 = ang(a), am = ang(m), a1 = ang(b), ccw = norm(am - a0) <= norm(a1 - a0);
+  const ap = ang(p); const d = Math.hypot(p.x - k.c.x, p.y - k.c.y);
+  const inside = ccw ? norm(ap - a0) <= norm(a1 - a0) : norm(a0 - ap) <= norm(a0 - a1);
+  if (inside && d > 1e-9) return { x: k.c.x + (p.x - k.c.x) / d * k.r, y: k.c.y + (p.y - k.c.y) / d * k.r };
+  return Math.hypot(p.x - a.x, p.y - a.y) <= Math.hypot(p.x - b.x, p.y - b.y) ? { x: a.x, y: a.y } : { x: b.x, y: b.y };
+}
