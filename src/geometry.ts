@@ -200,6 +200,27 @@ export function filletCorner(p: P, a: P, b: P, r: number): { t1: P; t2: P; arc: 
   return { t1, t2, arc: { a: t1, b: t2, m: { x: c.x - bis.x * r, y: c.y - bis.y * r } } };
 }
 
+/** Chamfer a corner p of two lines (far ends a and b): cuts d1 along the line to a and d2 along the line to b. */
+export function chamferCorner(p: P, a: P, b: P, d1: number, d2: number): { t1: P; t2: P } {
+  if (!(d1 > 0) || !(d2 > 0)) throw new Error('Chamfer distances must be greater than 0.');
+  const la = Math.hypot(a.x - p.x, a.y - p.y), lb = Math.hypot(b.x - p.x, b.y - p.y); if (la < 1e-9 || lb < 1e-9) throw new Error('Zero-length line.');
+  const u = { x: (a.x - p.x) / la, y: (a.y - p.y) / la }, v = { x: (b.x - p.x) / lb, y: (b.y - p.y) / lb };
+  const th = Math.acos(Math.max(-1, Math.min(1, u.x * v.x + u.y * v.y)));
+  if (th < 1e-3 || Math.abs(th - Math.PI) < 1e-3) throw new Error('The two lines are parallel: no corner to chamfer.');
+  if (d1 >= la - 1e-9 || d2 >= lb - 1e-9) throw new Error(`Chamfer too large: distances ${d1} and ${d2} must be shorter than the lines (${la.toFixed(3)} and ${lb.toFixed(3)}).`);
+  return { t1: { x: p.x + u.x * d1, y: p.y + u.y * d1 }, t2: { x: p.x + v.x * d2, y: p.y + v.y * d2 } };
+}
+
+/** Second distance for "distance and angle": d1 along the first line, chamfer making angle (degrees) with that line. */
+export function chamferDistAngle(p: P, a: P, b: P, d1: number, angDeg: number): number {
+  const la = Math.hypot(a.x - p.x, a.y - p.y), lb = Math.hypot(b.x - p.x, b.y - p.y); if (la < 1e-9 || lb < 1e-9) throw new Error('Zero-length line.');
+  const th = Math.acos(Math.max(-1, Math.min(1, ((a.x - p.x) * (b.x - p.x) + (a.y - p.y) * (b.y - p.y)) / (la * lb))));
+  if (!(angDeg > 0) || angDeg >= 180) throw new Error('Chamfer angle must be between 0 and 180 degrees.');
+  const al = (angDeg * Math.PI) / 180, g = Math.PI - th - al;
+  if (g <= 1e-6) throw new Error(`Angle too large: it must be smaller than ${(180 - (th * 180) / Math.PI).toFixed(3)} degrees for this corner.`);
+  return (d1 * Math.sin(al)) / Math.sin(g);
+}
+
 /** Trim a line at the crossings with other lines: removes the piece under the click between its two nearest crossings
  * (or the end). Returns the lines that replace it. No crossing at all removes the whole line. */
 export function trimLine(l: { a: P; b: P }, others: { a: P; b: P }[], click: P): { a: P; b: P }[] {
