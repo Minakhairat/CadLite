@@ -67,3 +67,18 @@ if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } co
   const q1 = nearestOnArc({ x: 3, y: 20 }, A, B, M)!; if (Math.hypot(q1.x - 3 * 10 / Math.hypot(3, 20), q1.y - 20 * 10 / Math.hypot(3, 20)) > 1e-9) { console.error('nearestOnArc inside span'); process.exit(1); }
   const q2 = nearestOnArc({ x: 4, y: -20 }, A, B, M)!; if (Math.hypot(q2.x - 10, q2.y) > 1e-9) { console.error('nearestOnArc outside span goes to end a'); process.exit(1); }
   const q3 = nearestOnArc({ x: -4, y: -20 }, A, B, M)!; if (Math.hypot(q3.x + 10, q3.y) > 1e-9) { console.error('nearestOnArc outside span goes to end b'); process.exit(1); } }
+
+import { chamferCorner, chamferDistAngle } from './geometry';
+{
+  const O = { x: 0, y: 0 }, A = { x: 10, y: 0 }, B = { x: 0, y: 10 };
+  const c = chamferCorner(O, A, B, 2, 3);
+  near(c.t1.x, 2, 1e-9, 'chamfer t1 x'); near(c.t2.y, 3, 1e-9, 'chamfer t2 y');
+  near(chamferDistAngle(O, A, B, 2, 45), 2, 1e-9, 'chamfer 90deg corner, 45deg gives d2=d1');
+  near(chamferDistAngle(O, A, B, 2, 30), 2 * Math.sin(Math.PI / 6) / Math.sin(Math.PI / 3), 1e-9, 'chamfer 30deg');
+  const bad = (f: () => unknown, m: string) => { let t = false; try { f(); } catch { t = true; } if (!t) { console.error('FAIL', m); process.exit(1); } console.log('ok', m); };
+  bad(() => chamferCorner(O, A, B, 10, 3), 'chamfer too long');
+  bad(() => chamferCorner(O, A, B, 0, 3), 'chamfer zero');
+  bad(() => chamferCorner(O, A, { x: -10, y: 0 }, 2, 2), 'chamfer parallel');
+  bad(() => chamferDistAngle(O, A, B, 2, 90), 'chamfer angle too large');
+  bad(() => chamferDistAngle(O, A, B, 2, 0), 'chamfer angle zero');
+}
