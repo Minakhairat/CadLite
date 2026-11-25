@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'circ3' | 'arcc' | 'rectc' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -327,6 +327,26 @@ sk.addEventListener('pointerdown', (e) => {
   if (tool === 'arc') {
     segPts.push(p);
     if (segPts.length === 3) { const [a, b, mm] = segPts; if (circle3(a, b, mm)) { sketch.push({ t: 'arc', a, b, m: mm }); props(); } else msg('Arc points are on one line: pick a point off the line.'); segPts = []; }
+    hover = p; draw(); return;
+  }
+  if (tool === 'circ3') {
+    segPts.push(p);
+    if (segPts.length === 3) { const [a, b, c3] = segPts; segPts = []; const cc = circle3(a, b, c3); if (cc) { sketch.push({ t: 'circle', c: cc.c, r: cc.r }); props(); msg(`Circle added: centre (${+cc.c.x.toFixed(3)}, ${+cc.c.y.toFixed(3)}), radius ${+cc.r.toFixed(3)} mm.`); } else msg('Circle: the three points are on one line. Pick points off the line.'); }
+    hover = p; draw(); return;
+  }
+  if (tool === 'arcc') {
+    segPts.push(p);
+    if (segPts.length === 2) { if (Math.hypot(segPts[1].x - segPts[0].x, segPts[1].y - segPts[0].y) < 1e-9) { segPts = []; msg('Arc: the start point must differ from the centre.'); draw(); return; } msg('Now click the end direction (the arc runs counter-clockwise from the start).'); }
+    if (segPts.length === 3) { const [c, s0, q] = segPts; segPts = []; const r = Math.hypot(s0.x - c.x, s0.y - c.y), a0 = Math.atan2(s0.y - c.y, s0.x - c.x), a1 = Math.atan2(q.y - c.y, q.x - c.x);
+      if (Math.hypot(q.x - c.x, q.y - c.y) < 1e-9) { msg('Arc: the end direction cannot be the centre.'); draw(); return; }
+      let sw = a1 - a0; while (sw <= 1e-9) sw += 2 * Math.PI; while (sw > 2 * Math.PI) sw -= 2 * Math.PI; if (Math.abs(sw - 2 * Math.PI) < 1e-9) { msg('Arc: the end direction equals the start. Use Circle for a full circle.'); draw(); return; }
+      const at = (an: number): P => ({ x: c.x + r * Math.cos(an), y: c.y + r * Math.sin(an) });
+      sketch.push({ t: 'arc', a: at(a0), b: at(a0 + sw), m: at(a0 + sw / 2) }); props(); msg(`Arc added: radius ${+r.toFixed(3)} mm, sweep ${+((sw * 180) / Math.PI).toFixed(3)} deg.`); }
+    hover = p; draw(); return;
+  }
+  if (tool === 'rectc') {
+    segPts.push(p);
+    if (segPts.length === 2) { const [c, q] = segPts; segPts = []; const dx = Math.abs(q.x - c.x), dy = Math.abs(q.y - c.y); if (dx < 1e-9 || dy < 1e-9) { msg('Rectangle: the corner must differ from the centre in both X and Y.'); draw(); return; } sketch.push({ t: 'rect', a: { x: c.x - dx, y: c.y - dy }, b: { x: c.x + dx, y: c.y + dy } }); props(); msg(`Rectangle added: ${+(2 * dx).toFixed(3)} x ${+(2 * dy).toFixed(3)} mm about the centre.`); }
     hover = p; draw(); return;
   }
   if (tool === 'ellipse') {
