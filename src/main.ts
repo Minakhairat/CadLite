@@ -26,6 +26,7 @@ let dims: Dim[] = [];
 let dimTarget: { e: Entity; w: Dim['w']; pos: P } | null = null;
 let segPts: P[] = []; // line chain start / arc clicks in progress
 let hover: P | null = null;
+let hoverSnap: P | null = null;
 let sketch: Entity[] = [];
 let winA: P | null = null, winB: P | null = null, winPx = { x: 0, y: 0 }; // window-select box (world corners, start pixel)
 let selE: Entity[] = []; let hist: string[] = []; let redoS: string[] = []; let restoring = false;
@@ -171,6 +172,7 @@ function draw() {
   for (const c of cons) { const mid = (l: L) => { const ci = l as unknown as { c?: P; r?: number }; const ang = 0.9 * cons.indexOf(c); const am = (l as unknown as { m?: P }).m; if (am) return toScreen(am); return ci.c ? toScreen({ x: ci.c.x + (ci.r ?? 0) * Math.cos(ang), y: ci.c.y + (ci.r ?? 0) * Math.sin(ang) }) : toScreen({ x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 }); }; if (c.k === 'len') continue; if (PT_KINDS.includes(c.k as string)) { const s = toScreen((c.l as unknown as PointE).p); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(s.x, s.y, 7 * dpr, 0, 7); ctx.stroke(); continue; } if (c.k === 'coin') { const v = c.v ?? 0; const q = (l: L, e: number) => toScreen(e ? l.b : l.a); ctx.strokeStyle = '#b4531a'; ctx.lineWidth = 2 * dpr; for (const s of [q(c.l, v >> 1 & 1), q(c.m!, v & 1)]) { ctx.beginPath(); ctx.arc(s.x, s.y, 6 * dpr, 0, 7); ctx.stroke(); } continue; } const lab = ({ h: 'H', v: 'V', par: '\u2225', perp: '\u22A5', eq: '=', fix: '\u2693', tanlc: 'T', tancc: 'T', conc: '\u25CE', eqr: '=', rad: 'R', tanla: 'T', aconc: '\u25CE', aeqr: '=', col: '\u2261', sym: '\u21D4' } as Record<string, string>)[c.k]; ctx.font = `bold ${12 * dpr}px sans-serif`; ctx.fillStyle = '#b4531a'; for (const l of c.m ? [c.l, c.m] : [c.l]) { const s = mid(l); ctx.fillText(lab, s.x + 6 * dpr, s.y - 6 * dpr); } }
   for (const d of dims) { const s = toScreen(d.pos); const t = dimText(d); ctx.font = `${12 * dpr}px sans-serif`; const w = ctx.measureText(t).width + 8 * dpr; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#34506f'; ctx.lineWidth = 1 * dpr; ctx.fillRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.strokeRect(s.x, s.y - 9 * dpr, w, 18 * dpr); ctx.fillStyle = '#123'; ctx.fillText(t, s.x + 4 * dpr, s.y + 4 * dpr); }
   ctx.strokeStyle = '#1f6fd1';
+  if (hoverSnap && tool !== 'none' && tool !== 'select' && tool !== 'trim' && tool !== 'extend' && tool !== 'split') { const hs = toScreen(hoverSnap); ctx.save(); ctx.setLineDash([]); ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2 * dpr; ctx.strokeRect(hs.x - 7 * dpr, hs.y - 7 * dpr, 14 * dpr, 14 * dpr); ctx.restore(); }
   if (hover && tool !== 'none' && Math.hypot(hover.x, hover.y) < 1e-9) { const o2 = toScreen({ x: 0, y: 0 }); ctx.fillStyle = '#2bb24c'; ctx.beginPath(); ctx.arc(o2.x, o2.y, 5 * dpr, 0, 7); ctx.fill(); }
   if (c && drag) { ctx.fillStyle = '#123'; ctx.font = `${13 * dpr}px sans-serif`; const s = toScreen(drag.cur); ctx.fillText(c.t === 'rect' ? `${Math.abs(c.b.x - c.a.x)} x ${Math.abs(c.b.y - c.a.y)} mm` : c.t === 'circle' ? `R ${c.r.toFixed(1)} mm` : '', s.x + 12, s.y - 12); }
 }
@@ -476,7 +478,7 @@ sk.addEventListener('pointerdown', (e) => {
 sk.addEventListener('pointermove', (e) => {
   if (pan) { cam.x -= ((e.clientX - pan.x) * devicePixelRatio) / cam.s; cam.y += ((e.clientY - pan.y) * devicePixelRatio) / cam.s; pan = { x: e.clientX, y: e.clientY }; draw(); return; }
   if (winA) { winB = ptRaw(e); draw(); }
-  const p = pt(e); hover = p; if (segPts.length) draw(); $('coord').textContent = `X ${p.x}  Y ${p.y}  mm`;
+  const p = pt(e); hover = p; { const tg = snapTarget(ptRaw(e)); const ch = (tg?.x ?? NaN) !== (hoverSnap?.x ?? NaN) || (tg?.y ?? NaN) !== (hoverSnap?.y ?? NaN); hoverSnap = tg; if (ch && !segPts.length) draw(); } if (segPts.length) draw(); $('coord').textContent = `X ${p.x}  Y ${p.y}  mm`;
   if (drag) { drag.cur = p; drag.moved = true; draw(); }
 });
 let downAt = { x: 0, y: 0 };
