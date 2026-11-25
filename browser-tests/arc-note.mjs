@@ -34,13 +34,13 @@ const note=()=>p.$$eval('.arcnote',e=>e.map(x=>x.textContent));
 const dofT=()=>p.$$eval('.arcdof',e=>e.map(x=>x.textContent));
 await a.tool('arc');await a.click(10,0);await a.click(0,10);await a.click(10,10);await p.keyboard.press('Escape');await w(300);
 let n=await note();console.log(n);
-ok('arc row shows that nothing is stored and DOF note',n.length===1&&n[0].includes('No arc constraint')&&n[0].includes('Arc own DOF is shown below'));
-{const d=await dofT();console.log(d);ok('free arc shows Arc own DOF 5 of 5',d.length===1&&d[0].includes('Arc own DOF: 5 of 5'));}
+ok('arc row shows that nothing is stored and DOF note',n.length===1&&n[0].includes('No arc constraint')&&n[0].includes('An estimated arc-only count is shown below'));
+{const d=await dofT();console.log(d);ok('free arc shows estimated count 5 of 5',d.length===1&&d[0].includes('Estimated arc-only count: 5 of 5'));}
 await a.tool('line');await a.click(20,5);await a.click(30,15);await p.keyboard.press('Escape');await w(200);
 await a.tool('ctanarc');await a.click(0,10);await w(100);
 const [lx,ly]=[25,10];await a.click(lx,ly);await w(1500);console.log(await a.msg());
 n=await note();console.log(n);
-{const d=await dofT();console.log(d);ok('after Tangent to a line the arc shows 4 of 5',d.length===1&&d[0].includes('Arc own DOF: 4 of 5'));}
+{const d=await dofT();console.log(d);ok('after Tangent to a line the arc shows 4 of 5',d.length===1&&d[0].includes('Estimated arc-only count: 4 of 5'));}
 ok('after a tangent constraint the arc row lists it and says end points are NOT constrained',n.length===1&&n[0].includes('tangent to a line')&&n[0].includes('NOT constrained'));
 await p.screenshot({path:'/tmp/arc-note.png'});
 await b.close();process.exit(bad);
