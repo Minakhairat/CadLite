@@ -156,7 +156,10 @@ function dimApply(e: Entity, w: Dim['w'], v: number) {
     const old = { ...e.b }; const nb = { x: e.a.x + ((e.b.x - e.a.x) / L) * v, y: e.a.y + ((e.b.y - e.a.y) / L) * v };
     for (const o of sketch) { // keep connected end points joined
       if (o === e) continue;
-      for (const k of ['a', 'b'] as const) if ((o.t === 'line' || o.t === 'arc') && Math.hypot(o[k].x - old.x, o[k].y - old.y) < 1e-6) o[k] = { ...nb };
+      for (const k of ['a', 'b'] as const) if ((o.t === 'line' || o.t === 'arc') && Math.hypot(o[k].x - old.x, o[k].y - old.y) < 1e-6) {
+        // A line end follows by position (drawn chains rely on it, still outstanding). An ARC end follows only when a stored arc end on line end relation says so: an arc that merely touches stays put.
+        if (o.t === 'arc' && !cons.some((c) => (c.k as string) === 'aend' && (c.l as unknown) === o && (c.m as unknown) === e && ((c.v ?? 0) & 1) === 1 && ((c.v ?? 0) >> 1 & 1) === (k === 'b' ? 1 : 0))) continue;
+        o[k] = { ...nb }; }
     }
     e.b = nb; return;
   }
