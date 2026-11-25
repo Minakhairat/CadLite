@@ -280,7 +280,7 @@ sk.addEventListener('pointerdown', (e) => {
       if (!tg) { msg('Click near a line end point, a line, an arc or a circle.'); return; }
       const c2: Con = { k: kk as Con['k'], l: ptPick as unknown as L, m: tg as unknown as L }; ptPick = null; cons.push(c2); applyPointRels(); ck(); msg(kk === 'pcol' ? 'Point on line: it is projected onto the line and follows it (one-way).' : kk === 'pcoa' ? 'Point on arc: it is moved to the nearest spot of the arc (the end point when it is outside the arc span) and follows it (one-way).' : 'Point on circle: it is moved onto the circle and follows it (one-way).'); props(); draw(); return;
     }
-    const c: Con = { k: 'pcoin' as Con['k'], l: ptPick as unknown as L, m: best.l as unknown as L, v: best.e }; ptPick = null; cons.push(c); applyPointRels(); ck(); msg('Point attached: it now follows that line end (one-way: the line does not follow the Point).'); props(); draw(); return;
+    const c: Con = { k: 'pcoin' as Con['k'], l: ptPick as unknown as L, m: best.l as unknown as L, v: best.e }; ptPick = null; cons.push(c); applyPointRels(); ck(); msg('Point attached to that line end (two-way: moving the Point moves the line end, unless the line has a dimension).'); props(); draw(); return;
   }
   if (tool === 'csym') {
     let bi = -1, bd = (10 * devicePixelRatio) / cam.s;
