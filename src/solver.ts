@@ -23,3 +23,15 @@ export async function dofSketch(lines: L[], cons: Con[]): Promise<number> {
   const cc = cons.filter((c) => lines.includes(c.l) && (!c.m || lines.includes(c.m)) && (!c.n || lines.includes(c.n))).map((c) => ({ ...c, l: map(c.l) as L, ...(c.m ? { m: map(c.m) as L } : {}), ...(c.n ? { n: map(c.n) as L } : {}) }));
   return solveLines((await w) as never, cp, cc);
 }
+
+/** Per line: true when the line cannot move at all under the line constraints (fixing it would remove no degree of freedom). Works on copies. */
+export async function dofLineMarks(lines: L[], cons: Con[]): Promise<boolean[]> {
+  const base = await dofSketch(lines, cons);
+  if (base < 0) return lines.map(() => false);
+  const out: boolean[] = [];
+  for (const l of lines) {
+    const d = await dofSketch(lines, [...cons, { k: 'fix', l }]);
+    out.push(d >= 0 && d === base);
+  }
+  return out;
+}
