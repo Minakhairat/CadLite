@@ -51,6 +51,7 @@ near((stretchEntity(el, { x0: 0, y0: 0, x1: 50, y1: 50 }, 3, 1) as any).ell.c.x,
   const n0 = arcConstraintNote([]); const n1 = arcConstraintNote(['tanla', 'aeqr', 'xyz']);
   if (!n0.includes('No arc constraint') || !n0.includes('tally of stored relations')) { console.error('FAIL arc note empty', n0); process.exit(1); }
   if (!n1.includes('tangent to a line') || !n1.includes('equal radius') || n1.includes('concentric') || !n1.includes('NOT constrained')) { console.error('FAIL arc note kinds', n1); process.exit(1); }
+  const n2 = arcConstraintNote(['aend']); if (!n2.includes('end point on a line end point') || !n2.includes('other end is NOT constrained') || n2.includes('No arc constraint')) { console.error('FAIL arc note aend', n2); process.exit(1); }
   console.log('ok arc constraint notes');
 }
 {
