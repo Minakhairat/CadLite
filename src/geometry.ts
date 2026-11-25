@@ -7,7 +7,7 @@ export type Seg = { a: P; b: P; m?: P }; // straight segment, or arc a -> m -> b
 export type Entity = (
   | { t: 'rect'; a: P; b: P }
   | { t: 'circle'; c: P; r: number }
-  | { t: 'poly'; pts: P[]; segs?: Seg[]; ell?: { c: P; a: number; b: number; rot: number } } // ell: exact ellipse (centre, semi-axes, rotation in degrees) for the solid kernel; pts is its polygon for display
+  | { t: 'poly'; pts: P[]; segs?: Seg[]; ell?: { c: P; a: number; b: number; rot: number }; spl?: P[] } // spl: closed fit-point spline (solid kernel builds the smooth curve; pts is the display sampling). ell: exact ellipse (centre, semi-axes, rotation in degrees) for the solid kernel; pts is its polygon for display
   | { t: 'line'; a: P; b: P }
   | { t: 'point'; p: P } // point: a marker, never part of the profile
   | { t: 'arc'; a: P; b: P; m: P } // arc: start a, end b, passing through m
