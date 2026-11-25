@@ -434,6 +434,7 @@ sk.addEventListener('pointerdown', (e) => {
       if (Math.abs(sw - 2 * Math.PI) < 1e-9) { msg('Slot: the end direction equals the start. Pick a different end direction.'); draw(); return; }
       if (wd < 1e-9) { msg('Slot: the width point is on the centre arc. Click inside or outside it.'); draw(); return; }
       if (wd >= R - 1e-9) { msg(`Slot: the half-width ${+wd.toFixed(3)} mm must be smaller than the centre arc radius ${+R.toFixed(3)} mm.`); draw(); return; }
+      if (sw > Math.PI) { const chord = 2 * R * Math.sin((2 * Math.PI - sw) / 2); if (chord <= 2 * wd + 1e-9) { msg(`Slot: the two round ends would overlap (gap between end centres ${+chord.toFixed(3)} mm, width ${+(2 * wd).toFixed(3)} mm). Use a smaller sweep or a narrower slot.`); draw(); return; } }
       const at = (rr: number, an: number): P => ({ x: o.x + rr * Math.cos(an), y: o.y + rr * Math.sin(an) }), am = a0 + sw / 2;
       const cap = (an: number, sgn: number): P => ({ x: o.x + R * Math.cos(an) + sgn * wd * -Math.sin(an), y: o.y + R * Math.sin(an) + sgn * wd * Math.cos(an) });
       sketch.push({ t: 'arc', a: at(R + wd, a0), b: at(R + wd, a0 + sw), m: at(R + wd, am) }, { t: 'arc', a: at(R + wd, a0 + sw), b: at(R - wd, a0 + sw), m: cap(a0 + sw, 1) }, { t: 'arc', a: at(R - wd, a0 + sw), b: at(R - wd, a0), m: at(R - wd, am) }, { t: 'arc', a: at(R - wd, a0), b: at(R + wd, a0), m: cap(a0, -1) }); props(); draw(); msg(`Slot added: arc slot, centre radius ${+R.toFixed(3)} mm, width ${+(2 * wd).toFixed(3)} mm, sweep ${+((sw * 180) / Math.PI).toFixed(3)} deg.`); }
