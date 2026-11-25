@@ -16,7 +16,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
 type Mode = 'model' | 'sketch';
 let mode: Mode = 'model';
-let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'circ3' | 'arcc' | 'rectc' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
+let tool: 'cpt' | 'csym' | 'ccol' | 'point' | 'rect' | 'circle' | 'poly' | 'slot' | 'ellipse' | 'rpoly' | 'circ3' | 'arcc' | 'rectc' | 'rect3' | 'spline' | 'line' | 'arc' | 'dim' | 'sfil' | 'trim' | 'extend' | 'split' | 'chor' | 'cver' | 'cpar' | 'cper' | 'ceq' | 'cfix' | 'ccoin' | 'crad' | 'ctanarc' | 'ctan' | 'cconc' | 'ceqr' | 'select' | 'none' = 'rect';
 let conEnd: { l: Extract<Entity, { t: 'line' }>; e: number } | null = null; let cons: Con[] = []; let conPick: L | null = null; let symPick: L[] = []; let ptPick: PointE | null = null; let pendingSrc: SketchSrc | null = null; let matIdx = 0;
 const MATS: [string, number, string][] = [['Generic (placeholder, not a real material)', 1.0, 'placeholder'], ['Aluminum 6061 (typical)', 2.70, 'MatWeb, AA typical value'], ['Steel AISI 1018', 7.87, 'MatWeb AISI 1018'], ['Stainless steel 304', 8.00, 'MatWeb UNS S30400'], ['Gray cast iron (typical)', 7.15, 'MatWeb, typical for gray cast iron; varies by class'], ['Copper (pure)', 8.96, 'Royal Society of Chemistry, element data'], ['Brass C26000', 8.53, 'MatWeb, cartridge brass UNS C26000'], ['Titanium Ti-6Al-4V', 4.43, 'ASM data sheet via MatWeb, annealed'], ['Gold (pure)', 19.32, 'NIST Star composition data'], ['Nylon 6 (average of grades)', 1.13, 'LookPolymers average of 526 grades; fillers change it']]; // g/cm3. Reference values for one specific alloy/grade each; real parts vary with alloy, temper, moisture and supplier. Check your own material data.
 const matName = () => MATS[matIdx][0];
@@ -347,6 +347,14 @@ sk.addEventListener('pointerdown', (e) => {
   if (tool === 'rectc') {
     segPts.push(p);
     if (segPts.length === 2) { const [c, q] = segPts; segPts = []; const dx = Math.abs(q.x - c.x), dy = Math.abs(q.y - c.y); if (dx < 1e-9 || dy < 1e-9) { msg('Rectangle: the corner must differ from the centre in both X and Y.'); draw(); return; } sketch.push({ t: 'rect', a: { x: c.x - dx, y: c.y - dy }, b: { x: c.x + dx, y: c.y + dy } }); props(); msg(`Rectangle added: ${+(2 * dx).toFixed(3)} x ${+(2 * dy).toFixed(3)} mm about the centre.`); }
+    hover = p; draw(); return;
+  }
+  if (tool === 'rect3') {
+    segPts.push(p);
+    if (segPts.length === 2) { if (Math.hypot(segPts[1].x - segPts[0].x, segPts[1].y - segPts[0].y) < 1e-9) { segPts = []; msg('Rectangle: the two side points must differ.'); draw(); return; } msg('Now click a point at the rectangle width from the first side.'); }
+    if (segPts.length === 3) { const [a, b, q] = segPts; segPts = []; const L = Math.hypot(b.x - a.x, b.y - a.y), d = { x: (b.x - a.x) / L, y: (b.y - a.y) / L }, nn = { x: -d.y, y: d.x }; const wd = (q.x - a.x) * nn.x + (q.y - a.y) * nn.y;
+      if (Math.abs(wd) < 1e-9) { msg('Rectangle: the width point is on the first side line. Click off the line.'); draw(); return; }
+      const o = { x: nn.x * wd, y: nn.y * wd }; sketch.push({ t: 'poly', pts: [{ ...a }, { ...b }, { x: b.x + o.x, y: b.y + o.y }, { x: a.x + o.x, y: a.y + o.y }] }); props(); msg(`Rectangle added: ${+L.toFixed(3)} x ${+Math.abs(wd).toFixed(3)} mm, rotated. Plain polygon, no dimensions.`); }
     hover = p; draw(); return;
   }
   if (tool === 'rpoly') {
