@@ -1,4 +1,4 @@
-import { incircleOfLines, extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
+import { arcTangentFrom, incircleOfLines, extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (Math.abs(a - b) > tol) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(2)); };
 const box: Entity[] = [{ t: 'rect', a: { x: 0, y: 0 }, b: { x: 10, y: 20 } }];
 near(volume(extrude(box, 5)), 1000, 1e-6, 'box extrude volume');
@@ -56,3 +56,10 @@ if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } co
 { const ic = incircleOfLines({ a: { x: 0, y: 0 }, b: { x: 0, y: 10 } }, { a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { a: { x: 10, y: 0 }, b: { x: 0, y: 10 } })!;
   near(ic.r, (20 - Math.hypot(10, 10)) / 2, 1e-9, 'incircle radius of the 10-10 right triangle'); near(ic.c.x, ic.r, 1e-9, 'incircle centre x'); near(ic.c.y, ic.r, 1e-9, 'incircle centre y');
   if (incircleOfLines({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { a: { x: 0, y: 5 }, b: { x: 10, y: 5 } }, { a: { x: 0, y: 0 }, b: { x: 0, y: 10 } }) !== null) { console.error('FAIL parallel lines must be refused'); process.exit(1); } console.log('ok parallel lines refused'); }
+
+{ const at = arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 40, y: 20 })!;
+  near(at.c.x, 30, 1e-9, 'tangent arc centre x'); near(at.c.y, 20, 1e-9, 'tangent arc centre y'); near(at.r, 10, 1e-9, 'tangent arc radius');
+  near(at.m.x, 30 + 10 * Math.SQRT1_2, 1e-9, 'tangent arc mid x'); near(at.m.y, 20 - 10 * Math.SQRT1_2, 1e-9, 'tangent arc mid y');
+  const cw = arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 40, y: 0 })!; near(cw.c.y, 0, 1e-9, 'clockwise tangent arc centre y'); near(cw.m.x, 30 + 10 * Math.SQRT1_2, 1e-9, 'clockwise mid x'); near(cw.m.y, 10 * Math.SQRT1_2, 1e-9, 'clockwise mid y');
+  const big = arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 20, y: 20 })!; near(big.c.x, 30, 1e-9, 'over-180 arc centre x'); near(big.m.x, 30 + 10 * Math.SQRT1_2, 1e-9, 'over-180 arc (270 deg sweep) mid x'); near(big.m.y, 20 + 10 * Math.SQRT1_2, 1e-9, 'over-180 arc mid y');
+  if (arcTangentFrom({ x: 30, y: 10 }, { x: 1, y: 0 }, { x: 50, y: 10 }) !== null) { console.error('FAIL end on tangent line must be refused'); process.exit(1); } console.log('ok end point on the tangent line refused'); }
