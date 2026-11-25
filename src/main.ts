@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { toOBJ, toSTEP, toDXF } from './exporters';
 import { solveSketch, solveCircleSketch, dofSketch, dofLineMarks, dofCircleMarks, getW, Con, L } from './solver';
 import { LINE_KINDS } from './solver-core';
-import { solveArcs } from './arc-solver-core';
+import { solveArcs, arcOwnDof, ARC_OWN_DOF } from './arc-solver-core';
 import { computeBodies, stepOf, loadKernel, Body as KBody } from './kernel';
 import type { Spec } from './kernel-core';
 import { Tf, transformEntity, offsetEntity, moveTf, rotateTf, mirrorTf, scaleEntity, stretchEntity, isPt, PointE, arcConcentric, arcEqualRadius, arcConstraintNote, pointEndStep } from './sketch-ops';
@@ -77,6 +77,7 @@ function refreshCircDof() { const cs = sketch.filter((e) => e.t === 'circle') as
   const cc = cons.filter((c) => ['tanlc', 'tancc', 'conc', 'eqr', 'rad'].includes(c.k as string)); if (!cs.length || !cc.length) { set(new Set()); return; }
   const ls = sketch.filter((e) => e.t === 'line') as L[];
   dofCircleMarks(ls, cs, cc.map((c) => ({ k: c.k as 'tanlc' | 'tancc' | 'conc' | 'eqr' | 'rad', ...(c.v !== undefined ? { v: c.v } : {}), c: c.l as never, ...(c.k === 'tanlc' ? { l: c.m } : c.m ? { d: c.m as never } : {}) })) as never).then((mk) => { if (n !== dofCircSeq) return; const nm = new Set<Entity>(); cs.forEach((c, i) => { if (mk[i]) nm.add(c as unknown as Entity); }); set(nm); }, () => set(new Set())); }
+function arcDofMap() { const arcs = sketch.filter((e) => e.t === 'arc'); return arcOwnDof(arcs, cons.filter((c) => ['tanla', 'aconc', 'aeqr'].includes(c.k as string)).map((c) => ({ k: c.k as 'tanla' | 'aconc' | 'aeqr', arc: c.l as unknown as object, other: c.m as unknown as object }))); }
 function refreshDof() { refreshCircDof(); const ls = sketch.filter((e) => e.t === 'line') as L[]; const n = ++dofSeq; if (!ls.length) { if (dofVal !== null) { dofVal = null; draw(); } return; }
   const lc = cons.filter((c) => LINE_KINDS.includes(c.k));
   (lc.length ? dofLineMarks(ls, lc) : Promise.resolve(ls.map(() => false))).then((mk) => { if (n !== dofSeq) return; const nm = new Set<L>(); ls.forEach((l, i) => { if (mk[i]) nm.add(l); }); const same = nm.size === dofFixed.size && [...nm].every((x) => dofFixed.has(x)); if (!same) { dofFixed = nm; draw(); } }, () => undefined);
@@ -744,7 +745,7 @@ function props() {
     } else if (e.t === 'circle') {
       title(`Circle ${i + 1}`); g.append(numField('Center X (mm)', e.c.x, (n) => (e.c.x = n)), numField('Center Y (mm)', e.c.y, (n) => (e.c.y = n)), numField('Radius (mm)', e.r, (n) => n > 0 && (e.r = n)));
     } else if (e.t === 'line') title(`Line ${i + 1} (${Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y).toFixed(2)} mm)`);
-    else if (e.t === 'arc') { title(`Arc ${i + 1} (3-point)`); const nt = document.createElement('div'); nt.className = 'arcnote'; nt.style.cssText = 'font-size:11px;color:#5b6773;margin:2px 0'; nt.textContent = arcConstraintNote(cons.filter((c) => (c.l as unknown) === e || (c.m as unknown) === e).map((c) => c.k as string)); r.append(nt); }
+    else if (e.t === 'arc') { title(`Arc ${i + 1} (3-point)`); const nt = document.createElement('div'); nt.className = 'arcnote'; nt.style.cssText = 'font-size:11px;color:#5b6773;margin:2px 0'; nt.textContent = arcConstraintNote(cons.filter((c) => (c.l as unknown) === e || (c.m as unknown) === e).map((c) => c.k as string)); r.append(nt); const dn = document.createElement('div'); dn.className = 'arcdof'; dn.style.cssText = 'font-size:11px;font-weight:600;color:#34506f;margin:2px 0'; dn.textContent = `Arc own DOF: ${arcDofMap().get(e) ?? ARC_OWN_DOF} of ${ARC_OWN_DOF} (its two end points and bulge; tangent, concentric and equal radius counted; not combined with line DOF)`; r.append(dn); }
     else if (isPt(e)) { const pe = e as PointE; title(`Point ${i + 1}`); g.append(numField('X (mm)', pe.p.x, (n) => (pe.p.x = n)), numField('Y (mm)', pe.p.y, (n) => (pe.p.y = n))); }
     else title(`Polygon ${i + 1} (${e.pts.length} points)`);
     const role = patRole(e);
