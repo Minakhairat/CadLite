@@ -1,4 +1,4 @@
-import { extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
+import { incircleOfLines, extendLine, splitLine, extrude, revolve, volume, Entity } from './geometry';
 const near = (a: number, b: number, tol: number, m: string) => { if (Math.abs(a - b) > tol) { console.error('FAIL', m, a, b); process.exit(1); } console.log('ok', m, a.toFixed(2)); };
 const box: Entity[] = [{ t: 'rect', a: { x: 0, y: 0 }, b: { x: 10, y: 20 } }];
 near(volume(extrude(box, 5)), 1000, 1e-6, 'box extrude volume');
@@ -52,3 +52,7 @@ if (!threw) { console.error('FAIL open profile accepted'); process.exit(1); } co
   if (extendLine({ a: { x: 0, y: 0 }, b: { x: 4, y: 0 } }, [{ a: { x: -3, y: -5 }, b: { x: -3, y: 5 } }], { x: 4, y: 0 }) !== null) { console.error('FAIL extend must not go backwards'); process.exit(1); } console.log('ok extend: wall behind the end is ignored');
   const sp = splitLine({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { x: 3, y: 4 })!; near(sp[0].b.x, 3, 1e-9, 'split point x = projection 3'); near(sp[1].a.x, 3, 1e-9, 'second part starts at the split'); near(Math.hypot(sp[0].b.x - sp[0].a.x, 0) + Math.hypot(sp[1].b.x - sp[1].a.x, 0), 10, 1e-9, 'split parts add up to 10');
   if (splitLine({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { x: -2, y: 1 }) !== null) { console.error('FAIL split at an end must be refused'); process.exit(1); } console.log('ok split at the end is refused'); }
+
+{ const ic = incircleOfLines({ a: { x: 0, y: 0 }, b: { x: 0, y: 10 } }, { a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { a: { x: 10, y: 0 }, b: { x: 0, y: 10 } })!;
+  near(ic.r, (20 - Math.hypot(10, 10)) / 2, 1e-9, 'incircle radius of the 10-10 right triangle'); near(ic.c.x, ic.r, 1e-9, 'incircle centre x'); near(ic.c.y, ic.r, 1e-9, 'incircle centre y');
+  if (incircleOfLines({ a: { x: 0, y: 0 }, b: { x: 10, y: 0 } }, { a: { x: 0, y: 5 }, b: { x: 10, y: 5 } }, { a: { x: 0, y: 0 }, b: { x: 0, y: 10 } }) !== null) { console.error('FAIL parallel lines must be refused'); process.exit(1); } console.log('ok parallel lines refused'); }
