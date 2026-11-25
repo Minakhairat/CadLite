@@ -85,7 +85,7 @@ export function arcConstraintNote(kinds: string[]): string {
   if (has('aeqr')) held.push('equal radius');
   if (has('aend')) held.push('an end point on a line end point');
   if (!held.length) return 'No arc constraint stored. A tally of stored relations is shown below.';
-  return `Stored: ${held.join(', ')}. ${has('aend') ? 'That arc end follows the line end (one way); the other end is NOT constrained.' : 'The arc end points are NOT constrained.'} A tally of stored relations is shown below; arc DOF is not solved yet.`;
+  return `Stored: ${held.join(', ')}. ${has('aend') ? 'That arc end is joined to the line end: a line change moves the arc end, and typing the arc end in the fields below moves the line end too. Dragging or Move of the arc end does not move the line. The other end is NOT constrained.' : 'The arc end points are NOT constrained.'} A tally of stored relations is shown below; arc DOF is not solved yet.`;
 }
 
 /** Two-way Point on end point. Decide who moved since the relation was last applied. 'drive': only the Point moved and the line may follow, so the line end takes the Point's place. 'follow': the line end moved (or both did, or the line must not move), so the Point goes back to the line end. */
